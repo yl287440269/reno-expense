@@ -1,0 +1,16 @@
+{
+  "name": "reno-expense",
+  "version": "1.0.0",
+  "private": true,
+  "description": "装修费用与预算记录 - 多用户版（Docker + SQLite）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "better-sqlite3": "^11.3.0",
+    "bcryptjs": "^2.4.3",
+    "cookie-session": "^2.0.0"
+  }
+}

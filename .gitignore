@@ -1,0 +1,24 @@
+# 依赖
+node_modules/
+
+# 运行时数据（本地数据库、日志）
+data/
+
+# 离线单机版遗留（非本项目服务文件，不入库）
+/index.html
+
+# 本地工作区记忆（内部信息，不入公开仓库）
+.workbuddy/
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+*.log
+
+# 环境变量与密钥（严禁入库）
+.env
+.env.*
+!.env.example
+
+# 测试临时
+/tmp/

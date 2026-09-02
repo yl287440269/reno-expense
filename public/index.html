@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>装修费用与预算记录</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --text:#1f2933; --muted:#7b8794;
+    --line:#e4e7eb; --primary:#2f6fed; --primary-soft:#eaf1ff;
+    --hard:#2f6fed; --soft:#a855f7; --elec:#f59e0b; --furn:#10b981; --other:#94a3b8;
+    --danger:#ef4444; --ok:#10b981; --warn:#f59e0b;
+    --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 60px}
+  .hidden{display:none!important}
+
+  /* 登录/注册 */
+  .auth{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#eef3ff,#f5f7fa);z-index:100;padding:16px}
+  .auth-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:30px;width:340px;box-shadow:0 20px 50px rgba(16,24,40,.15)}
+  .auth-card h1{font-size:20px;margin-bottom:4px}
+  .auth-card .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .seg{display:flex;background:var(--bg);border-radius:10px;padding:4px;margin-bottom:16px}
+  .seg-btn{flex:1;border:none;background:transparent;padding:8px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--muted);font-weight:600}
+  .seg-btn.active{background:#fff;color:var(--text);box-shadow:var(--shadow)}
+  .auth-card input{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:14px;margin-bottom:12px;font-family:inherit}
+  .auth-card input:focus{outline:none;border-color:var(--primary)}
+  .block{width:100%;justify-content:center}
+  .err{color:var(--danger);font-size:13px;min-height:18px;margin-top:4px;text-align:center}
+
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+  header h1{font-size:22px;font-weight:700;display:flex;align-items:center;gap:8px}
+  header h1 .dot{width:10px;height:10px;border-radius:50%;background:var(--primary)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--text);padding:8px 14px;border-radius:9px;font-size:14px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px;font-weight:500}
+  .btn:hover{border-color:var(--primary);color:var(--primary)}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .btn.primary:hover{background:#2559d6;color:#fff}
+  .btn.ghost{background:transparent}
+  .userchip{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .userchip b{color:var(--text)}
+
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+  .stat .label{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .stat .val{font-size:20px;font-weight:700;letter-spacing:-.3px}
+  .stat .sub{font-size:11px;color:var(--muted);margin-top:3px}
+  .stat.over .val{color:var(--danger)}
+  .stat.save .val{color:var(--ok)}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;box-shadow:var(--shadow);margin-bottom:18px}
+  .panel h2{font-size:15px;font-weight:700;margin-bottom:14px}
+  .bar-row{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center;margin-bottom:12px}
+  .bar-row .cat{font-size:13px;font-weight:600}
+  .bar-track{background:#f1f4f8;border-radius:7px;height:22px;position:relative;overflow:hidden}
+  .bar-fill{height:100%;border-radius:7px;transition:width .4s}
+  .bar-label{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:#fff;font-weight:600;text-shadow:0 1px 1px rgba(0,0,0,.25)}
+  .bar-label.out{color:var(--text);text-shadow:none;right:8px}
+
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .tab{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:6px 14px;font-size:13px;cursor:pointer;color:var(--muted);transition:.15s;display:flex;align-items:center;gap:6px}
+  .tab .sw{width:8px;height:8px;border-radius:50%}
+  .tab.active{background:var(--text);color:#fff;border-color:var(--text)}
+  .tab.active .sw{outline:2px solid #fff;outline-offset:-3px}
+
+  .list{display:flex;flex-direction:column;gap:12px}
+  .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+  .item .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .item .name{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .item .tag{font-size:11px;padding:2px 9px;border-radius:20px;color:#fff;font-weight:600}
+  .item .meta{font-size:12px;color:var(--muted);margin-top:2px}
+  .item .ops{display:flex;gap:6px}
+  .icon-btn{border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--muted);padding:4px 8px;border-radius:7px}
+  .icon-btn:hover{background:var(--bg);color:var(--text)}
+  .icon-btn.del:hover{background:#fef2f2;color:var(--danger)}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
+  .cell{background:var(--bg);border-radius:9px;padding:9px 11px}
+  .cell .k{font-size:11px;color:var(--muted)}
+  .cell .v{font-size:15px;font-weight:700;margin-top:2px}
+  .cell .v.red{color:var(--danger)}
+  .cell .v.green{color:var(--ok)}
+  .progress{height:7px;background:#eef1f5;border-radius:6px;margin-top:12px;overflow:hidden}
+  .progress > span{display:block;height:100%;background:var(--primary);border-radius:6px;transition:width .4s}
+  .progress.ok > span{background:var(--ok)}
+  .pstatus{font-size:11px;color:var(--muted);margin-top:5px;display:flex;justify-content:space-between}
+  .empty{text-align:center;color:var(--muted);padding:50px 20px;background:var(--card);border:1px dashed var(--line);border-radius:12px}
+  .empty .big{font-size:40px;margin-bottom:8px}
+
+  .mask{position:fixed;inset:0;background:rgba(16,24,40,.45);display:none;align-items:flex-start;justify-content:center;padding:30px 14px;z-index:50;overflow:auto}
+  .mask.show{display:flex}
+  .modal{background:var(--card);border-radius:16px;width:100%;max-width:480px;padding:22px;box-shadow:0 20px 50px rgba(16,24,40,.25)}
+  .modal h3{font-size:17px;margin-bottom:16px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}
+  .field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:14px;font-family:inherit;background:#fff;color:var(--text)}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--primary)}
+  .field textarea{resize:vertical;min-height:54px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .modal-ops{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
+  .hint{font-size:11px;color:var(--muted);margin-top:4px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:10px 18px;border-radius:10px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
+  .toast.show{opacity:1}
+  @media(max-width:760px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .grid{grid-template-columns:repeat(2,1fr)}
+    .row2{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- 登录/注册 -->
+<div id="auth" class="auth hidden">
+  <div class="auth-card">
+    <h1>装修费用记录</h1>
+    <p class="sub">登录或注册后，数据独立保存在你的账号里</p>
+    <div class="seg">
+      <button id="tabLogin" class="seg-btn active" type="button">登录</button>
+      <button id="tabReg" class="seg-btn" type="button">注册</button>
+    </div>
+    <form id="authForm">
+      <input id="authUser" placeholder="用户名" autocomplete="username">
+      <input id="authPass" type="password" placeholder="密码（至少 6 位）" autocomplete="current-password">
+      <button type="submit" class="btn primary block" id="authSubmit">登录</button>
+      <p id="authErr" class="err"></p>
+    </form>
+  </div>
+</div>
+
+<!-- 主应用 -->
+<div id="app" class="wrap hidden">
+  <header>
+    <h1><span class="dot"></span>装修费用与预算记录</h1>
+    <div class="toolbar">
+      <span class="userchip">👤 <b id="uname"></b></span>
+      <button class="btn ghost" id="btnLogout">退出</button>
+      <button class="btn" id="btnImport">导入备份</button>
+      <button class="btn" id="btnExport">导出备份</button>
+      <button class="btn primary" id="btnAdd">+ 添加记录</button>
+      <input type="file" id="fileInput" accept="application/json" style="display:none">
+    </div>
+  </header>
+
+  <section class="stats" id="stats"></section>
+
+  <section class="panel">
+    <h2>分类预算 vs 实际支出</h2>
+    <div id="chart"></div>
+  </section>
+
+  <div class="tabs" id="tabs"></div>
+
+  <section class="list" id="list"></section>
+</div>
+
+<!-- 弹窗 -->
+<div class="mask" id="mask">
+  <div class="modal">
+    <h3 id="modalTitle">添加记录</h3>
+    <form id="form">
+      <input type="hidden" id="f_id">
+      <div class="field">
+        <label>项目名称 *</label>
+        <input id="f_name" required placeholder="如：客厅瓷砖、主卧衣柜、空调">
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>类别 *</label>
+          <select id="f_category">
+            <option value="硬装">硬装</option>
+            <option value="软装">软装</option>
+            <option value="电器">电器</option>
+            <option value="家具">家具</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>商家/供应商</label>
+          <input id="f_supplier" placeholder="选填">
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>原先预算 (元)</label>
+          <input id="f_budget" type="number" min="0" step="0.01" placeholder="0">
+        </div>
+        <div class="field">
+          <label>实际总价 (元)</label>
+          <input id="f_actual" type="number" min="0" step="0.01" placeholder="0">
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>已付定金 (元)</label>
+          <input id="f_deposit" type="number" min="0" step="0.01" placeholder="0">
+        </div>
+        <div class="field">
+          <label>已付进度款/其他 (元)</label>
+          <input id="f_other" type="number" min="0" step="0.01" placeholder="0">
+        </div>
+      </div>
+      <div class="field">
+        <label>日期</label>
+        <input id="f_date" type="date">
+      </div>
+      <div class="field">
+        <label>备注</label>
+        <textarea id="f_note" placeholder="选填，如：分3期付款、含安装费等"></textarea>
+      </div>
+      <p class="hint" id="calcHint"></p>
+      <div class="modal-ops">
+        <button type="button" class="btn ghost" id="btnCancel">取消</button>
+        <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CATS = {
+  '硬装':{raw:'#2f6fed'}, '软装':{raw:'#a855f7'}, '电器':{raw:'#f59e0b'},
+  '家具':{raw:'#10b981'}, '其他':{raw:'#94a3b8'}
+};
+let data = [];
+let activeCat = '全部';
+let me = null;
+
+// ---------- API ----------
+async function api(path, opts={}){
+  const res = await fetch('/api'+path, {
+    credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    ...opts
+  });
+  if(res.status===401){ location.reload(); throw new Error('未登录'); }
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(j.error||'请求失败');
+  return j;
+}
+
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1800);
+}
+function fmt(n){
+  const v=Number(n)||0;
+  return '¥'+v.toLocaleString('zh-CN',{minimumFractionDigits:0,maximumFractionDigits:2});
+}
+function today(){ return new Date().toISOString().slice(0,10); }
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function derive(r){
+  const budget=Number(r.budget)||0, actual=Number(r.actual)||0,
+        deposit=Number(r.deposit)||0, other=Number(r.other)||0;
+  const paid=deposit+other;
+  const balance=Math.max(actual-paid,0);
+  const settled=actual>0 && balance<=0.001;
+  const progress=actual>0?Math.min(paid/actual*100,100):0;
+  return {budget,actual,deposit,other,paid,balance,settled,progress};
+}
+
+// ---------- 渲染 ----------
+function render(){
+  renderStats(); renderChart(); renderTabs(); renderList();
+}
+function renderStats(){
+  let tb=0,ta=0,tp=0,tb2=0;
+  data.forEach(r=>{const d=derive(r); tb+=d.budget; ta+=d.actual; tp+=d.paid; tb2+=d.balance;});
+  const diff=ta-tb;
+  document.getElementById('stats').innerHTML=`
+    <div class="stat"><div class="label">总预算</div><div class="val">${fmt(tb)}</div><div class="sub">计划支出</div></div>
+    <div class="stat"><div class="label">实际总价</div><div class="val">${fmt(ta)}</div><div class="sub">${data.length} 笔记录</div></div>
+    <div class="stat"><div class="label">已付合计</div><div class="val">${fmt(tp)}</div><div class="sub">定金+进度款</div></div>
+    <div class="stat"><div class="label">待付尾款</div><div class="val" style="color:var(--danger)">${fmt(tb2)}</div><div class="sub">${tb2>0?'还需付款':'已全部结清'}</div></div>
+    <div class="stat ${diff>0?'over':(diff<0?'save':'')}"><div class="label">预算差额</div><div class="val">${diff>0?'+':''}${fmt(diff)}</div><div class="sub">${diff>0?'超支':'结余'}</div></div>`;
+}
+function catAgg(){
+  const m={}; Object.keys(CATS).forEach(c=>m[c]={budget:0,actual:0,paid:0,balance:0});
+  data.forEach(r=>{const d=derive(r); const c=m[r.category]||(m[r.category]={budget:0,actual:0,paid:0,balance:0}); c.budget+=d.budget; c.actual+=d.actual; c.paid+=d.paid; c.balance+=d.balance;});
+  return m;
+}
+function renderChart(){
+  const m=catAgg();
+  const max=Math.max(1,...Object.keys(m).map(c=>Math.max(m[c].budget,m[c].actual)));
+  document.getElementById('chart').innerHTML=Object.keys(CATS).map(c=>{
+    const a=m[c]; if(a.budget===0&&a.actual===0) return '';
+    const bw=Math.max(a.budget/max*100,2), aw=Math.max(a.actual/max*100,2);
+    return `<div class="bar-row"><div class="cat">${c}</div><div>
+      <div class="bar-track"><div class="bar-fill" style="width:${bw}%;background:${CATS[c].raw}33"></div><span class="bar-label out">${fmt(a.budget)} 预算</span></div>
+      <div class="bar-track" style="margin-top:5px"><div class="bar-fill" style="width:${aw}%;background:${CATS[c].raw}"></div><span class="bar-label">${fmt(a.actual)} 实际</span></div>
+    </div></div>`;
+  }).join('') || '<p style="color:var(--muted);font-size:13px">暂无数据，添加记录后这里会显示分类对比。</p>';
+}
+function renderTabs(){
+  const m=catAgg();
+  const items=[['全部',null],...Object.keys(CATS).map(c=>[c,m[c]])];
+  document.getElementById('tabs').innerHTML=items.map(([name,agg])=>{
+    const cnt=name==='全部'?data.length:data.filter(r=>r.category===name).length;
+    const sw=name==='全部'?'':`<span class="sw" style="background:${CATS[name].raw}"></span>`;
+    return `<div class="tab ${activeCat===name?'active':''}" data-cat="${name}">${sw}${name} <span style="opacity:.6">${cnt}</span></div>`;
+  }).join('');
+  document.querySelectorAll('#tabs .tab').forEach(t=>t.onclick=()=>{activeCat=t.dataset.cat; render();});
+}
+function renderList(){
+  const el=document.getElementById('list');
+  let items=data.slice();
+  if(activeCat!=='全部') items=items.filter(r=>r.category===activeCat);
+  if(items.length===0){
+    el.innerHTML=`<div class="empty"><div class="big">📋</div>${data.length===0?'还没有任何记录，点右上角「添加记录」开始吧':'该分类下暂无记录'}</div>`;
+    return;
+  }
+  el.innerHTML=items.map(r=>{
+    const d=derive(r); const c=CATS[r.category]||CATS['其他'];
+    const statusTxt=d.settled?'<span style="color:var(--ok);font-weight:600">✓ 已结清</span>':`<span style="color:var(--warn);font-weight:600">待付尾款 ${fmt(d.balance)}</span>`;
+    return `<div class="item"><div class="top"><div>
+      <div class="name">${escapeHtml(r.name)} <span class="tag" style="background:${c.raw}">${r.category}</span></div>
+      <div class="meta">${r.supplier?escapeHtml(r.supplier)+' · ':''}${r.date||'未填日期'}${r.note?' · '+escapeHtml(r.note):''}</div>
+    </div><div class="ops">
+      <button class="icon-btn" data-edit="${r.id}">编辑</button>
+      <button class="icon-btn del" data-del="${r.id}">删除</button>
+    </div></div>
+    <div class="grid">
+      <div class="cell"><div class="k">预算</div><div class="v">${fmt(d.budget)}</div></div>
+      <div class="cell"><div class="k">实际总价</div><div class="v">${fmt(d.actual)}</div></div>
+      <div class="cell"><div class="k">已付(定金${fmt(d.deposit)}+其他${fmt(d.other)})</div><div class="v">${fmt(d.paid)}</div></div>
+      <div class="cell"><div class="k">尾款</div><div class="v ${d.settled?'green':'red'}">${fmt(d.balance)}</div></div>
+    </div>
+    <div class="progress ${d.settled?'ok':''}"><span style="width:${d.progress}%"></span></div>
+    <div class="pstatus"><span>付款进度 ${d.progress.toFixed(0)}%</span><span>${statusTxt}</span></div></div>`;
+  }).join('');
+  el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openModal(b.dataset.edit));
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>del(b.dataset.del));
+}
+
+// ---------- 弹窗 ----------
+const mask=document.getElementById('mask');
+function openModal(id){
+  document.getElementById('form').reset();
+  document.getElementById('f_date').value=today();
+  if(id){
+    const r=data.find(x=>x.id===id); if(!r)return;
+    document.getElementById('modalTitle').textContent='编辑记录';
+    document.getElementById('f_id').value=r.id;
+    document.getElementById('f_name').value=r.name;
+    document.getElementById('f_category').value=r.category;
+    document.getElementById('f_supplier').value=r.supplier||'';
+    document.getElementById('f_budget').value=r.budget||'';
+    document.getElementById('f_actual').value=r.actual||'';
+    document.getElementById('f_deposit').value=r.deposit||'';
+    document.getElementById('f_other').value=r.other||'';
+    document.getElementById('f_date').value=r.date||today();
+    document.getElementById('f_note').value=r.note||'';
+  }else{
+    document.getElementById('modalTitle').textContent='添加记录';
+    document.getElementById('f_id').value='';
+  }
+  updateHint(); mask.classList.add('show');
+}
+function closeModal(){ mask.classList.remove('show'); }
+function updateHint(){
+  const b=Number(document.getElementById('f_budget').value)||0;
+  const a=Number(document.getElementById('f_actual').value)||0;
+  const dep=Number(document.getElementById('f_deposit').value)||0;
+  const oth=Number(document.getElementById('f_other').value)||0;
+  const paid=dep+oth, bal=Math.max(a-paid,0);
+  let s=`已付合计 ${fmt(paid)}，尾款 ${fmt(bal)}`;
+  if(a>0&&b>0){const diff=a-b; s+=` ｜ 相对预算${diff>0?'超支':'结余'} ${fmt(Math.abs(diff))}`;}
+  document.getElementById('calcHint').textContent=s;
+}
+['f_budget','f_actual','f_deposit','f_other'].forEach(id=>document.getElementById(id).addEventListener('input',updateHint));
+
+document.getElementById('btnAdd').onclick=()=>openModal();
+document.getElementById('btnCancel').onclick=closeModal;
+mask.onclick=e=>{ if(e.target===mask) closeModal(); };
+
+document.getElementById('form').onsubmit=async e=>{
+  e.preventDefault();
+  const id=document.getElementById('f_id').value;
+  const rec={
+    name:document.getElementById('f_name').value.trim(),
+    category:document.getElementById('f_category').value,
+    supplier:document.getElementById('f_supplier').value.trim(),
+    budget:Number(document.getElementById('f_budget').value)||0,
+    actual:Number(document.getElementById('f_actual').value)||0,
+    deposit:Number(document.getElementById('f_deposit').value)||0,
+    other:Number(document.getElementById('f_other').value)||0,
+    date:document.getElementById('f_date').value,
+    note:document.getElementById('f_note').value.trim()
+  };
+  try{
+    if(id) await api('/items/'+id,{method:'PUT',body:JSON.stringify(rec)});
+    else await api('/items',{method:'POST',body:JSON.stringify(rec)});
+    closeModal(); await refresh(); toast(id?'已更新':'已添加');
+  }catch(err){ toast(err.message); }
+};
+
+async function del(id){
+  if(!confirm('确定删除这条记录？'))return;
+  try{ await api('/items/'+id,{method:'DELETE'}); await refresh(); toast('已删除'); }
+  catch(err){ toast(err.message); }
+}
+async function refresh(){ data=await api('/items'); render(); }
+
+// ---------- 导入导出 ----------
+document.getElementById('btnExport').onclick=()=>{
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`装修费用备份_${today()}.json`; a.click();
+  toast('已导出当前账号数据');
+};
+document.getElementById('btnImport').onclick=()=>document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  try{
+    const arr=JSON.parse(await f.text());
+    if(!Array.isArray(arr)) throw new Error('格式错误');
+    if(!confirm(`将把文件中的 ${arr.length} 条记录添加到当前账号，确认？`)) return;
+    for(const x of arr){
+      await api('/items',{method:'POST',body:JSON.stringify({
+        name:x.name, category:x.category, supplier:x.supplier,
+        budget:x.budget, actual:x.actual, deposit:x.deposit, other:x.other, date:x.date, note:x.note
+      })});
+    }
+    await refresh(); toast('导入完成');
+  }catch(err){ toast('导入失败：'+err.message); }
+  e.target.value='';
+};
+
+// ---------- 认证 ----------
+let mode='login';
+function setMode(){
+  document.getElementById('tabLogin').classList.toggle('active',mode==='login');
+  document.getElementById('tabReg').classList.toggle('active',mode==='reg');
+  document.getElementById('authSubmit').textContent = mode==='login'?'登录':'注册';
+  document.getElementById('authErr').textContent='';
+}
+document.getElementById('tabLogin').onclick=()=>{mode='login';setMode();};
+document.getElementById('tabReg').onclick=()=>{mode='reg';setMode();};
+document.getElementById('authForm').onsubmit=async e=>{
+  e.preventDefault();
+  const username=document.getElementById('authUser').value.trim();
+  const password=document.getElementById('authPass').value;
+  if(!username||!password){document.getElementById('authErr').textContent='请输入用户名和密码';return;}
+  try{
+    if(mode==='login') await api('/login',{method:'POST',body:JSON.stringify({username,password})});
+    else await api('/register',{method:'POST',body:JSON.stringify({username,password})});
+    await boot();
+  }catch(err){ document.getElementById('authErr').textContent=err.message; }
+};
+document.getElementById('btnLogout').onclick=async ()=>{
+  try{ await api('/logout',{method:'POST'}); }catch(e){}
+  location.reload();
+};
+
+// ---------- 启动 ----------
+async function boot(){
+  try{ const r=await api('/me'); me=r.user; }catch(e){ me=null; }
+  if(me){
+    document.getElementById('auth').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    document.getElementById('uname').textContent=me;
+    await refresh();
+  }else{
+    document.getElementById('auth').classList.remove('hidden');
+    document.getElementById('app').classList.add('hidden');
+  }
+}
+setMode();
+boot();
+</script>
+</body>
+</html>
