@@ -136,10 +136,12 @@
     <div class="toolbar">
       <span class="userchip">👤 <b id="uname"></b></span>
       <button class="btn ghost" id="btnLogout">退出</button>
+      <button class="btn" id="btnCsvImport">导入表格(CSV)</button>
       <button class="btn" id="btnImport">导入备份</button>
       <button class="btn" id="btnExport">导出备份</button>
       <button class="btn primary" id="btnAdd">+ 添加记录</button>
       <input type="file" id="fileInput" accept="application/json" style="display:none">
+      <input type="file" id="csvInput" accept=".csv,.txt,.xlsx" style="display:none">
     </div>
   </header>
 
@@ -427,6 +429,84 @@ document.getElementById('fileInput').onchange=async e=>{
     }
     await refresh(); toast('导入完成');
   }catch(err){ toast('导入失败：'+err.message); }
+  e.target.value='';
+};
+
+// ---------- CSV 导入表格 ----------
+// 列头别名(与后端一致)
+const CSV_COLS = {
+  name:['名称','项目','项目名称','项目名','事项'],
+  category:['类别','分类','类型','分类','类型'],
+  supplier:['商家','供应商','品牌','商家供应商'],
+  budget:['预算','原预算','原先预算','预算金额','计划金额','预算价'],
+  actual:['实际','实际价','实际价格','实际总价','实际花费','实际金额','成交价','金额','总价'],
+  deposit:['定金','订金','已付定金','预付','预付款'],
+  other:['进度款','其他','已付进度','已付','已付款','已付金额','已支付'],
+  date:['日期','时间','日期时间'],
+  note:['备注','说明','描述']
+};
+function csvParse(text){
+  const rows=[]; let cur='',row=[],inQ=false;
+  const s=String(text).replace(/^\uFEFF/,'');
+  for(let i=0;i<s.length;i++){
+    const c=s[i];
+    if(inQ){ if(c==='"'){ if(s[i+1]==='"'){cur+='"';i++;} else inQ=false; } else cur+=c; }
+    else if(c==='"'){ inQ=true; }
+    else if(c===','){ row.push(cur); cur=''; }
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&s[i+1]==='\n')i++; row.push(cur); cur=''; if(row.some(x=>String(x).trim()!==''))rows.push(row); row=[]; }
+    else cur+=c;
+  }
+  row.push(cur); if(row.some(x=>String(x).trim()!==''))rows.push(row);
+  return rows;
+}
+function csvMapHeader(header){
+  const h=String(header||'').toLowerCase().replace(/[（）()\s_\-、\/]/g,'');
+  for(const [key,aliases] of Object.entries(CSV_COLS)){
+    if(aliases.includes(h)||aliases.some(a=>h.includes(a.toLowerCase().replace(/[（）()\s_\-、\/]/g,'')))) return key;
+  }
+  return null;
+}
+async function readCsvAuto(file){
+  // 尝试 UTF-8，含乱码则回退 GBK
+  const buf=await file.arrayBuffer();
+  let text=new TextDecoder('utf-8').decode(buf);
+  if(/\uFFFD/.test(text)){ try{ text=new TextDecoder('gbk').decode(buf); }catch(e){} }
+  return csvParse(text);
+}
+document.getElementById('btnCsvImport').onclick=()=>document.getElementById('csvInput').click();
+document.getElementById('csvInput').onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  try{
+    const rows=await readCsvAuto(f);
+    if(rows.length<2) throw new Error('文件内容为空或太短');
+    const header=rows[0];
+    // 建列映射
+    const colMap={};
+    header.forEach((h,idx)=>{
+      if(/^合计$|^总计$/.test(String(h).trim())) colMap.skip=idx;
+      const key=csvMapHeader(h); if(key&&colMap[key]===undefined) colMap[key]=idx;
+    });
+    if(colMap.name===undefined) throw new Error('未识别到「名称/项目」列，请检查列名');
+    const records=rows.slice(1).map(row=>({
+      name:row[colMap.name]||'',
+      category:row[colMap.category]||'其他',
+      supplier:row[colMap.supplier]||'',
+      budget:row[colMap.budget]||'0',
+      actual:row[colMap.actual]||'0',
+      deposit:row[colMap.deposit]||'0',
+      other:row[colMap.other]||'0',
+      date:row[colMap.date]||'',
+      note:row[colMap.note]||''
+    })).filter(r=>r.name.trim());
+    if(records.length===0) throw new Error('没有有效数据行');
+    if(!confirm(`检测到 ${records.length} 条记录待导入，确认导入？`))return;
+    const res=await api('/import',{method:'POST',body:JSON.stringify({records})});
+    toast(`导入完成：成功 ${res.imported} 条`+(res.skipped?`，跳过 ${res.skipped}`:''));
+    await refresh();
+  }catch(err){
+    if(err.name==='AbortError')return;
+    toast('导入失败：'+err.message);
+  }
   e.target.value='';
 };
 
