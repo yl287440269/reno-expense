@@ -3,12 +3,12 @@ services:
     build: .
     container_name: reno-expense
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     volumes:
       - ./data:/data
     environment:
       # 务必改成随机长字符串，否则会话可能被伪造
-      - SESSION_SECRET=请改成随机长字符串例如reno-expense-2f9a7c
+      - SESSION_SECRET=${SESSION_SECRET}
       - PORT=3000
       - DATA_DIR=/data
     restart: unless-stopped
