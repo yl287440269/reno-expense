@@ -40,7 +40,32 @@ db.exec(`
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_items_user ON items(user_id);
+  CREATE TABLE IF NOT EXISTS categories(
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '',
+    sort INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, name),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
 `);
+
+// 默认分类(色板自动取色)
+const DEFAULT_CATS = ['硬装','软装','电器','家具','其他'];
+const CAT_COLOR_PALETTE = ['#2f6fed','#a855f7','#f59e0b','#10b981','#94a3b8','#ef4444','#06b6d4','#84cc16','#ec4899','#f97316','#8b5cf6','#14b8a6'];
+const catColor = idx => CAT_COLOR_PALETTE[idx % CAT_COLOR_PALETTE.length];
+
+// 为某用户初始化默认分类(幂等)
+function seedDefaultCats(userId){
+  const cx = db.prepare('INSERT OR IGNORE INTO categories(id,user_id,name,color,sort) VALUES(?,?,?,?,?)');
+  const tx = db.transaction(() => {
+    DEFAULT_CATS.forEach((name, i) => cx.run(uid(), userId, name, catColor(i), i));
+  });
+  tx();
+}
 
 // 存量库迁移：若 users 表缺少新列则补上（旧库兼容）
 (function migrate(){
@@ -51,6 +76,9 @@ db.exec(`
   add('last_login_ip', "last_login_ip TEXT DEFAULT ''");
   add('last_login_at', "last_login_at TEXT");
   add('total_budget', "total_budget REAL DEFAULT 0");
+  // 为已有的每个用户初始化默认分类(幂等)
+  const uids = db.prepare('SELECT id FROM users').all().map(r=>r.id);
+  uids.forEach(id => seedDefaultCats(id));
 })();
 
 // ---------- 应用 ----------
@@ -221,6 +249,7 @@ app.post('/api/register', (req, res) => {
     return res.status(409).json({ error: '用户名已存在' });
   const hash = bcrypt.hashSync(String(password), 10);
   const info = db.prepare('INSERT INTO users(username,password_hash) VALUES(?,?)').run(username, hash);
+  seedDefaultCats(info.lastInsertRowid);
   req.session.userId = info.lastInsertRowid;
   res.json({ ok: true, username });
 });
@@ -251,6 +280,60 @@ app.put('/api/budget', requireAuth, (req, res) => {
   if (!Number.isFinite(v) || v < 0) return res.status(400).json({ error: '预算金额无效' });
   db.prepare('UPDATE users SET total_budget=? WHERE id=?').run(v, req.session.userId);
   res.json({ ok: true, total_budget: v });
+});
+
+// ---------- 分类 API（每个用户独立一套）----------
+// 读取当前用户的分类列表(确保已初始化默认分类)
+app.get('/api/categories', requireAuth, (req, res) => {
+  const uid_ = req.session.userId;
+  const cnt = db.prepare('SELECT COUNT(*) c FROM categories WHERE user_id=?').get(uid_).c;
+  if (cnt === 0) seedDefaultCats(uid_);
+  const rows = db.prepare('SELECT id, name, color, sort FROM categories WHERE user_id=? ORDER BY sort, created_at').all(uid_);
+  res.json(rows);
+});
+
+// ---- 管理员：分类管理（按 user_id 操作指定用户，但接口面向当前登录的 admin 自己）----
+// 新增分类
+app.post('/api/admin/categories', requireAuth, requireAdmin, (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name || '').trim();
+  if (!name) return res.status(400).json({ error: '分类名称必填' });
+  if (db.prepare('SELECT id FROM categories WHERE user_id=? AND name=?').get(req.session.userId, name))
+    return res.status(409).json({ error: '分类已存在' });
+  const mx = db.prepare('SELECT COALESCE(MAX(sort),-1) s FROM categories WHERE user_id=?').get(req.session.userId).s;
+  const id = uid();
+  db.prepare('INSERT INTO categories(id,user_id,name,color,sort) VALUES(?,?,?,?,?)')
+    .run(id, req.session.userId, name, catColor(mx + 1), mx + 1);
+  res.json(db.prepare('SELECT id,name,color,sort FROM categories WHERE id=?').get(id));
+});
+// 重命名分类
+app.put('/api/admin/categories/:id', requireAuth, requireAdmin, (req, res) => {
+  const id = req.params.id;
+  const c = db.prepare('SELECT id FROM categories WHERE id=? AND user_id=?').get(id, req.session.userId);
+  if (!c) return res.status(404).json({ error: '分类不存在' });
+  const b = req.body || {};
+  const name = String(b.name || '').trim();
+  if (!name) return res.status(400).json({ error: '分类名称必填' });
+  if (db.prepare('SELECT id FROM categories WHERE user_id=? AND name=? AND id<>?').get(req.session.userId, name, id))
+    return res.status(409).json({ error: '分类已存在' });
+  const old = db.prepare('SELECT name FROM categories WHERE id=?').get(id).name;
+  db.prepare('UPDATE categories SET name=? WHERE id=?').run(name, id);
+  // 同步更新 items 里引用旧分类名的记录
+  db.prepare('UPDATE items SET category=? WHERE user_id=? AND category=?').run(name, req.session.userId, old);
+  res.json({ ok: true, name });
+});
+// 删除分类（自动把引用记录归到「其他」）
+app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, (req, res) => {
+  const id = req.params.id;
+  const c = db.prepare('SELECT name FROM categories WHERE id=? AND user_id=?').get(id, req.session.userId);
+  if (!c) return res.status(404).json({ error: '分类不存在' });
+  const other = db.prepare('SELECT id FROM categories WHERE user_id=? AND name=?').get(req.session.userId, '其他');
+  const fallback = other ? other.id : null;
+  // 先迁移引用记录到「其他」(若不存在其他分类则建一个)
+  if (!fallback) { const mx = db.prepare('SELECT COALESCE(MAX(sort),-1) s FROM categories WHERE user_id=?').get(req.session.userId).s; const nid = uid(); db.prepare('INSERT INTO categories(id,user_id,name,color,sort) VALUES(?,?,?,?,?)').run(nid, req.session.userId,'其他',catColor(mx+1),mx+1); }
+  db.prepare('UPDATE items SET category=? WHERE user_id=? AND category=?').run('其他', req.session.userId, c.name);
+  db.prepare('DELETE FROM categories WHERE id=? AND user_id=?').run(id, req.session.userId);
+  res.json({ ok: true, moved: true });
 });
 
 // ---------- 记录 CRUD（全部按 user_id 隔离）----------

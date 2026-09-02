@@ -162,6 +162,18 @@
   .pill.frozen{background:var(--danger)}
   .admin-ops{display:flex;gap:6px;flex-wrap:wrap}
   .admin-ops .btn{padding:4px 9px;font-size:12px}
+  .cat-mgr{gap:10px}
+  .cat-add{display:flex;gap:8px;margin-bottom:12px}
+  .cat-add input{flex:1;max-width:240px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+  .cat-list{display:flex;flex-direction:column;gap:6px}
+  .cat-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fafbfc}
+  .cat-row .dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+  .cat-row .nm{font-weight:600;font-size:13px}
+  .cat-row .cnt{font-size:12px;color:var(--muted)}
+  .cat-row .sp{flex:1}
+  .cat-row .btn{padding:4px 9px;font-size:12px}
+  .cat-row .btn.edit{color:var(--primary)}
+  .cat-row .btn.del{color:var(--danger)}
   .empty{text-align:center;color:var(--muted);padding:50px 20px;background:var(--card);border:1px dashed var(--line);border-radius:12px}
   .empty .big{font-size:40px;margin-bottom:8px}
 
@@ -256,6 +268,16 @@
     <button class="btn ghost" id="btnAdminBack">← 返回</button>
   </header>
   <section class="panel">
+    <h2>分类管理 <span style="font-size:12px;color:var(--muted);font-weight:400">管理你账号下的分类，增删改立即生效</span></h2>
+    <div class="cat-mgr">
+      <div class="cat-add">
+        <input id="catNewName" placeholder="新分类名称，如：门窗">
+        <button class="btn primary" id="btnCatAdd">新增分类</button>
+      </div>
+      <div id="adminCats"></div>
+    </div>
+  </section>
+  <section class="panel">
     <h2>所有用户</h2>
     <div id="adminUsers"></div>
   </section>
@@ -343,10 +365,9 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const CATS = {
-  '硬装':{raw:'#2f6fed'}, '软装':{raw:'#a855f7'}, '电器':{raw:'#f59e0b'},
-  '家具':{raw:'#10b981'}, '其他':{raw:'#94a3b8'}
-};
+const CATS = {};          // {名称:{raw:颜色}} 动态从 /api/categories 加载
+let CAT_SORT = [];        // 分类名数组，按 sort 排序
+const catColor = idx => ['#2f6fed','#a855f7','#f59e0b','#10b981','#94a3b8','#ef4444','#06b6d4','#84cc16','#ec4899','#f97316','#8b5cf6','#14b8a6'][idx % 12];
 let data = [];
 let activeCat = '全部';
 let payFilter = 'all';   // 付款状态筛选: all=全部, paid=付完全款, unpaid=未付完全款
@@ -379,6 +400,25 @@ function escapeHtml(s){
 }
 function today(){ return new Date().toISOString().slice(0,10); }
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// 动态分类：从 /api/categories 构建 CATS + CAT_SORT + 表单下拉
+async function loadCategories(){
+  let rows=[];
+  try{ rows=await api('/categories'); }catch(e){ rows=[]; }
+  CAT_SORT = rows.map(r=>r.name);
+  rows.forEach(r=>{ CATS[r.name]={raw: r.color || catColor(CAT_SORT.indexOf(r.name))}; });
+  // 兜底：确保"其他"存在(初始化默认分类已含, 此处仅防御)
+  if(!CATS['其他']) { CATS['其他']={raw:'#94a3b8'}; if(!CAT_SORT.includes('其他')) CAT_SORT.push('其他'); }
+  // 填充表单下拉
+  const sel=document.getElementById('f_category');
+  if(sel){
+    sel.innerHTML=CAT_SORT.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  }
+}
+// 安全取分类色(未知分类给默认灰)
+function catInfo(name){
+  return CATS[name]||{raw:'#94a3b8'};
+}
 
 function derive(r){
   const budget=Number(r.budget)||0, actual=Number(r.actual)||0,
@@ -518,8 +558,8 @@ function chartBarHtml(m,ms){
   return cats.map(c=>{
     const a=m[c]; const bw=Math.max(a.budget/max*100,2), aw=Math.max(a.actual/max*100,2);
     return `<div class="bar-row"><div class="cat">${c}</div><div>
-      <div class="bar-track"><div class="bar-fill" style="width:${bw}%;background:${CATS[c].raw}33"></div><span class="bar-label out">${fmt(a.budget)} 预算</span></div>
-      <div class="bar-track" style="margin-top:5px"><div class="bar-fill" style="width:${aw}%;background:${CATS[c].raw}"></div><span class="bar-label">${fmt(a.actual)} 实际</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${bw}%;background:${catInfo(c).raw}33"></div><span class="bar-label out">${fmt(a.budget)} 预算</span></div>
+      <div class="bar-track" style="margin-top:5px"><div class="bar-fill" style="width:${aw}%;background:${catInfo(c).raw}"></div><span class="bar-label">${fmt(a.actual)} 实际</span></div>
     </div></div>`;
   }).join('')+'<p class="chart-tip">同一类别两条柱：浅色=预算，深色=实际，柱高差即超支/结余。</p>';
 }
@@ -534,7 +574,7 @@ function renderChartDough(body,ms){
   let cum=0;
   const svg=cats.map(c=>{
     const len=Math.max(m[c].budget/total*C - GAP, 1);
-    const seg=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${CATS[c].raw}" stroke-width="26"
+    const seg=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${catInfo(c).raw}" stroke-width="26"
       stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-cum}" transform="rotate(-90 ${cx} ${cy})"/>`;
     cum += m[c].budget/total*C;
     return seg;
@@ -543,7 +583,7 @@ function renderChartDough(body,ms){
     <text x="${cx}" y="${cy+18}" text-anchor="middle" font-size="15" font-weight="600" fill="#1f2933">${ms(total)}</text>`;
   const legend=cats.map(c=>{
     const pc=(m[c].budget/total*100).toFixed(1);
-    return `<div class="row"><span class="sw" style="background:${CATS[c].raw}"></span><span class="lb">${c}</span><span class="vl">${ms(m[c].budget)}</span><span class="pc">·${pc}%</span></div>`;
+    return `<div class="row"><span class="sw" style="background:${catInfo(c).raw}"></span><span class="lb">${c}</span><span class="vl">${ms(m[c].budget)}</span><span class="pc">·${pc}%</span></div>`;
   }).join('');
   body.innerHTML=`<div class="dough-wrap">
     <svg class="dough-svg" width="190" height="190" role="img" aria-label="预算占比环形图">${svg}${center}</svg>
@@ -593,14 +633,14 @@ function renderChartDev(body,ms){
 }
 function renderTabs(){
   const m=catAgg();
-  const items=[['全部',null],...Object.keys(CATS).map(c=>[c,m[c]])];
+  const items=[['全部',null],...CAT_SORT.map(c=>[c,m[c]])];
   const payTabs=[
     ['paid','付完全款','#10b981'],
     ['unpaid','未付完全款','#f59e0b']
   ];
   document.getElementById('tabs').innerHTML=items.map(([name,agg])=>{
     const cnt=name==='全部'?data.length:data.filter(r=>r.category===name).length;
-    const sw=name==='全部'?'':`<span class="sw" style="background:${CATS[name].raw}"></span>`;
+    const sw=name==='全部'?'':`<span class="sw" style="background:${catInfo(name).raw}"></span>`;
     return `<div class="tab ${activeCat===name?'active':''}" data-cat="${name}">${sw}${name} <span style="opacity:.6">${cnt}</span></div>`;
   }).join('')+payTabs.map(([key,label,color])=>{
     const cnt=data.filter(r=>{
@@ -629,7 +669,7 @@ function renderList(){
     return;
   }
   el.innerHTML=items.map(r=>{
-    const d=derive(r); const c=CATS[r.category]||CATS['其他'];
+    const d=derive(r); const c=catInfo(r.category);
     const state=d.settled?'done':'doing';
     const badge=d.settled?'<span class="statusBadge done">✓ 已完成</span>':`<span class="statusBadge doing">● 进行中</span>`;
     const check=d.settled?'<span class="check">✓</span>':'';
@@ -663,7 +703,12 @@ function openModal(id){
     document.getElementById('modalTitle').textContent='编辑记录';
     document.getElementById('f_id').value=r.id;
     document.getElementById('f_name').value=r.name;
-    document.getElementById('f_category').value=r.category;
+    const sel=document.getElementById('f_category');
+    // 若记录分类不在当前下拉选项中，动态补一项(保护导入的历史分类)
+    if(r.category && !Array.from(sel.options).some(o=>o.value===r.category)){
+      sel.insertAdjacentHTML('beforeend',`<option value="${escapeHtml(r.category)}">${escapeHtml(r.category)}</option>`);
+    }
+    sel.value=r.category;
     document.getElementById('f_supplier').value=r.supplier||'';
     document.getElementById('f_budget').value=r.budget||'';
     document.getElementById('f_actual').value=r.actual||'';
@@ -877,6 +922,7 @@ document.getElementById('btnLogout').onclick=async ()=>{
 // ---------- 管理后台 ----------
 let adminData=[];
 async function renderAdmin(){
+  await renderAdminCats();
   try{
     adminData=await api('/admin/users');
   }catch(e){
@@ -920,6 +966,61 @@ async function adminDel(id){
   if(!confirm('确定删除该用户？其所有账目将一并删除，不可恢复！'))return;
   try{ await api('/admin/users/'+id,{method:'DELETE'}); toast('已删除'); renderAdmin(); }catch(e){ toast(e.message); }
 }
+// ---------- 分类管理 ----------
+async function renderAdminCats(){
+  const el=document.getElementById('adminCats');
+  let cats=[];
+  try{ cats=await api('/categories'); }catch(e){ el.innerHTML=`<p class="err">${e.message}</p>`; return; }
+  if(!cats.length){ el.innerHTML='<p style="color:var(--muted);font-size:13px">当前无分类。</p>'; return; }
+  const cntMap={};
+  data.forEach(r=>{ cntMap[r.category]=(cntMap[r.category]||0)+1; });
+  el.innerHTML=`<div class="cat-list">${cats.map(c=>`
+    <div class="cat-row">
+      <span class="dot" style="background:${escapeHtml(c.color||'#94a3b8')}"></span>
+      <span class="nm">${escapeHtml(c.name)}</span>
+      <span class="cnt">${cntMap[c.name]||0} 条记录</span>
+      <span class="sp"></span>
+      <button class="btn edit" data-editcat="${c.id}">重命名</button>
+      <button class="btn del" data-delcat="${c.id}" data-name="${escapeHtml(c.name)}">删除</button>
+    </div>`).join('')}</div>`;
+  el.querySelectorAll('[data-editcat]').forEach(b=>b.onclick=()=>adminRenameCat(b.dataset.editcat));
+  el.querySelectorAll('[data-delcat]').forEach(b=>b.onclick=()=>adminDelCat(b.dataset.delcat, b.dataset.name));
+  // 绑定新增
+  const add=document.getElementById('btnCatAdd');
+  add.onclick=adminAddCat;
+  document.getElementById('catNewName').addEventListener('keydown',e=>{ if(e.key==='Enter') adminAddCat(); });
+}
+async function adminAddCat(){
+  const input=document.getElementById('catNewName');
+  const name=input.value.trim();
+  if(!name){ toast('请输入分类名称'); return; }
+  try{
+    await api('/admin/categories',{method:'POST',body:JSON.stringify({name})});
+    input.value=''; toast('已新增分类');
+    await loadCategories(); await renderAdminCats(); renderTabs();
+  }catch(e){ toast(e.message); }
+}
+async function adminRenameCat(id){
+  const row=document.querySelector(`[data-editcat="${id}"]`);
+  const oldName=row?row.closest('.cat-row').querySelector('.nm').textContent.trim():'';
+  const name=prompt('新的分类名称：', oldName||'');
+  if(name===null) return;
+  const v=name.trim();
+  if(!v || v===oldName) return;
+  try{
+    await api('/admin/categories/'+id,{method:'PUT',body:JSON.stringify({name:v})});
+    toast('已重命名');
+    await loadCategories(); await renderAdminCats(); await refresh();
+  }catch(e){ toast(e.message); }
+}
+async function adminDelCat(id, name){
+  if(!confirm(`确定删除分类「${name}」？该分类下已有记录将自动归入「其他」，不会丢失。`))return;
+  try{
+    await api('/admin/categories/'+id,{method:'DELETE'});
+    toast('已删除分类，记录已归入「其他」');
+    await loadCategories(); await renderAdminCats(); await refresh();
+  }catch(e){ toast(e.message); }
+}
 let showAdmin=false;
 function showApp(flag){ document.getElementById('app').classList.toggle('hidden',!flag); }
 function toggleAdmin(){
@@ -945,6 +1046,7 @@ async function boot(){
     // 管理员显示后台按钮
     document.getElementById('btnAdmin').style.display = (myRole==='admin') ? '' : 'none';
     bindChartTabs();
+    await loadCategories();   // 动态加载分类(构建 CATS/CAT_SORT/下拉)
     await refresh();
   }else{
     document.getElementById('auth').classList.remove('hidden');
