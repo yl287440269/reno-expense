@@ -349,6 +349,7 @@ const CATS = {
 };
 let data = [];
 let activeCat = '全部';
+let payFilter = 'all';   // 付款状态筛选: all=全部, paid=付完全款, unpaid=未付完全款
 let me = null;
 let totalBudget = 0;   // 手动设置的总预算总额(账号级), 0=未设置
 
@@ -593,19 +594,38 @@ function renderChartDev(body,ms){
 function renderTabs(){
   const m=catAgg();
   const items=[['全部',null],...Object.keys(CATS).map(c=>[c,m[c]])];
+  const payTabs=[
+    ['paid','付完全款','#10b981'],
+    ['unpaid','未付完全款','#f59e0b']
+  ];
   document.getElementById('tabs').innerHTML=items.map(([name,agg])=>{
     const cnt=name==='全部'?data.length:data.filter(r=>r.category===name).length;
     const sw=name==='全部'?'':`<span class="sw" style="background:${CATS[name].raw}"></span>`;
     return `<div class="tab ${activeCat===name?'active':''}" data-cat="${name}">${sw}${name} <span style="opacity:.6">${cnt}</span></div>`;
+  }).join('')+payTabs.map(([key,label,color])=>{
+    const cnt=data.filter(r=>{
+      const d=derive(r);
+      return key==='paid'?d.settled:(!d.settled && d.actual>0);
+    }).length;
+    return `<div class="tab pay-tab ${payFilter===key?'active':''}" data-pay="${key}"><span class="sw" style="background:${color}"></span>${label} <span style="opacity:.6">${cnt}</span></div>`;
   }).join('');
-  document.querySelectorAll('#tabs .tab').forEach(t=>t.onclick=()=>{activeCat=t.dataset.cat; render();});
+  document.querySelectorAll('#tabs .tab').forEach(t=>{
+    t.onclick=()=>{
+      if(t.dataset.cat!==undefined){ activeCat=t.dataset.cat; payFilter='all'; }
+      else if(t.dataset.pay!==undefined){ payFilter=t.dataset.pay; activeCat='全部'; }
+      render();
+    };
+  });
 }
 function renderList(){
   const el=document.getElementById('list');
   let items=data.slice();
   if(activeCat!=='全部') items=items.filter(r=>r.category===activeCat);
+  if(payFilter==='paid') items=items.filter(r=>{const d=derive(r); return d.settled;});
+  else if(payFilter==='unpaid') items=items.filter(r=>{const d=derive(r); return !d.settled && d.actual>0;});
   if(items.length===0){
-    el.innerHTML=`<div class="empty"><div class="big">📋</div>${data.length===0?'还没有任何记录，点右上角「添加记录」开始吧':'该分类下暂无记录'}</div>`;
+    const filterOn = activeCat!=='全部' || payFilter!=='all';
+    el.innerHTML=`<div class="empty"><div class="big">📋</div>${data.length===0?'还没有任何记录，点右上角「添加记录」开始吧':(filterOn?'当前筛选条件下暂无记录':'该分类下暂无记录')}</div>`;
     return;
   }
   el.innerHTML=items.map(r=>{
