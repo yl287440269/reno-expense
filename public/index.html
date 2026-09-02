@@ -53,6 +53,28 @@
   .stat.over .val{color:var(--danger)}
   .stat.save .val{color:var(--ok)}
 
+  /* 总预算 hero 卡片 */
+  .budget-hero{background:linear-gradient(135deg,#2f6fed,#2559d6);border-radius:14px;color:#fff;padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .budget-hero .bh-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .budget-hero .bh-label{font-size:13px;opacity:.85;margin-bottom:4px;font-weight:600}
+  .budget-hero .bh-amount{font-size:34px;font-weight:700;letter-spacing:-.5px;line-height:1.1}
+  .budget-hero .bh-amount small{font-size:15px;font-weight:600;opacity:.75;margin-left:2px}
+  .budget-hero .bh-use{text-align:right;font-size:13px;opacity:.95}
+  .budget-hero .bh-use b{display:block;font-size:16px;color:#ffe08a;font-weight:700}
+  .budget-hero .bh-use span{opacity:.85}
+  .budget-hero .bh-bar{height:10px;background:rgba(255,255,255,.22);border-radius:6px;margin:16px 0 12px;overflow:hidden}
+  .budget-hero .bh-fill{height:100%;background:#0f6e56;border-radius:6px;transition:width .5s}
+  .budget-hero .bh-fill.warn{background:#f59e0b}
+  .budget-hero .bh-fill.over{background:#ef4444}
+  .budget-hero .bh-filllabel{display:flex;justify-content:space-between;font-size:12px;opacity:.9}
+  .budget-hero .bh-filllabel b{font-weight:700}
+  .budget-hero .bh-sub{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2)}
+  .budget-hero .bh-sub .item .k{font-size:12px;opacity:1;color:#dbe7ff;margin-bottom:4px}
+  .budget-hero .bh-sub .item .v{font-size:24px;font-weight:700;letter-spacing:-.3px}
+  .budget-hero .bh-sub .item .v.neg{color:#ffd6d6}
+  .budget-hero .bh-sub .item .v.pos{color:#ffe08a}
+  .budget-none{background:var(--card);border:1px dashed var(--line);border-radius:14px;padding:24px;color:var(--muted);text-align:center;margin-bottom:16px;font-size:14px}
+
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;box-shadow:var(--shadow);margin-bottom:18px}
   .panel h2{font-size:15px;font-weight:700;margin-bottom:14px}
   .bar-row{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center;margin-bottom:12px}
@@ -203,6 +225,8 @@
 
   <section class="stats" id="stats"></section>
 
+  <div id="budgetHero"></div>
+
   <section class="panel">
     <div class="chart-head">
       <h2>预算分析图表</h2>
@@ -346,7 +370,7 @@ function derive(r){
 
 // ---------- 渲染 ----------
 function render(){
-  renderStats(); renderChart(); renderTabs(); renderList();
+  renderBudgetHero(); renderStats(); renderChart(); renderTabs(); renderList();
 }
 function bindChartTabs(){
   document.querySelectorAll('#chartTabs .chart-tab').forEach(t=>{
@@ -358,13 +382,49 @@ function bindChartTabs(){
     };
   });
 }
+function renderBudgetHero(){
+  const el=document.getElementById('budgetHero');
+  let tb=0,ta=0,tp=0;
+  data.forEach(r=>{const d=derive(r); tb+=d.budget; ta+=d.actual; tp+=d.paid;});
+  if(tb<=0){ el.innerHTML='<div class="budget-none">请先为项目设置预算，这里会显示「总预算 · 已使用 · 剩余预算」。</div>'; return; }
+  const remain_actual=tb-ta;             // 剩余预算(按实际花费口径, 超支为负)
+  const remain_paid=tb-tp;               // 可付余额(按已付口径, 超支为负)
+  const rawPct=tb>0?(ta/tb*100):0;
+  const usedPct=Math.min(rawPct,100);
+  const actOver=ta>tb;
+  const barClass=actOver?'over':(rawPct>=80?'warn':'');
+  const usedTxt=actOver?`超支 ${fmt(ta-tb)}`:`已用 ${rawPct.toFixed(0)}%`;
+  const remainCls=(v)=>v<0?'neg':(v>0?'pos':'');
+  el.innerHTML=`
+  <div class="budget-hero">
+    <div class="bh-top">
+      <div>
+        <div class="bh-label">总预算</div>
+        <div class="bh-amount">${fmt(tb)}</div>
+      </div>
+      <div class="bh-use"><span>实际使用(实际总价)</span><b>${usedTxt}</b></div>
+    </div>
+    <div class="bh-bar"><div class="bh-fill ${barClass}" style="width:${usedPct}%"></div></div>
+    <div class="bh-filllabel"><span>预算已用 <b>${rawPct.toFixed(0)}%</b></span><span>${fmt(ta)} / ${fmt(tb)}</span></div>
+    <div class="bh-sub">
+      <div class="item">
+        <div class="k">${remain_actual<0?'超支金额(按实际花费)':'剩余预算(按实际花费)'}</div>
+        <div class="v ${remainCls(remain_actual)}">${fmt(Math.abs(remain_actual))}</div>
+      </div>
+      <div class="item">
+        <div class="k">${remain_paid<0?'超付金额(按已付/预算)':'可付余额(按已付/预算)'}</div>
+        <div class="v ${remainCls(remain_paid)}">${fmt(Math.abs(remain_paid))}</div>
+      </div>
+    </div>
+  </div>`;
+}
 function renderStats(){
-  let tb=0,ta=0,tp=0,tb2=0;
-  data.forEach(r=>{const d=derive(r); tb+=d.budget; ta+=d.actual; tp+=d.paid; tb2+=d.balance;});
+  let tb=0,ta=0,tp=0,tb2=0;  data.forEach(r=>{const d=derive(r); tb+=d.budget; ta+=d.actual; tp+=d.paid; tb2+=d.balance;});
   const diff=ta-tb;
+  const usePct=tb>0?(ta/tb*100):0;
   document.getElementById('stats').innerHTML=`
-    <div class="stat"><div class="label">总预算</div><div class="val">${fmt(tb)}</div><div class="sub">计划支出</div></div>
     <div class="stat"><div class="label">实际总价</div><div class="val">${fmt(ta)}</div><div class="sub">${data.length} 笔记录</div></div>
+    <div class="stat"><div class="label">预算使用率</div><div class="val ${usePct>100?'':''}">${usePct.toFixed(0)}%</div><div class="sub">${usePct>100?'已超支':'占预算'}</div></div>
     <div class="stat"><div class="label">已付合计</div><div class="val">${fmt(tp)}</div><div class="sub">定金+进度款</div></div>
     <div class="stat"><div class="label">待付尾款</div><div class="val" style="color:var(--danger)">${fmt(tb2)}</div><div class="sub">${tb2>0?'还需付款':'已全部结清'}</div></div>
     <div class="stat ${diff>0?'over':(diff<0?'save':'')}"><div class="label">预算差额</div><div class="val">${diff>0?'+':''}${fmt(diff)}</div><div class="sub">${diff>0?'超支':'结余'}</div></div>`;
