@@ -62,6 +62,37 @@
   .bar-label{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:#fff;font-weight:600;text-shadow:0 1px 1px rgba(0,0,0,.25)}
   .bar-label.out{color:var(--text);text-shadow:none;right:8px}
 
+  /* 图表切换 + 新增预算图表 */
+  .chart-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .chart-head h2{font-size:15px;font-weight:700;margin:0}
+  .chart-tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .chart-tab{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:4px 12px;font-size:12px;cursor:pointer;color:var(--muted);transition:.15s}
+  .chart-tab.active{background:var(--text);color:#fff;border-color:var(--text)}
+  .chart-body{margin-top:4px}
+  .dough-wrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap;justify-content:center}
+  .dough-svg{flex-shrink:0}
+  .dough-legend{display:flex;flex-direction:column;gap:9px;min-width:150px}
+  .dough-legend .row{display:flex;align-items:center;gap:8px;font-size:13px}
+  .dough-legend .sw{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+  .dough-legend .lb{color:var(--muted)}
+  .dough-legend .vl{margin-left:auto;font-weight:600}
+  .dough-legend .pc{font-size:11px;color:var(--muted)}
+  .hstack{display:flex;flex-direction:column;gap:12px}
+  .hstack .hs-row{display:grid;grid-template-columns:64px 1fr 60px;gap:10px;align-items:center}
+  .hs-row .cat{font-size:13px;font-weight:600}
+  .hs-row .val{font-size:12px;color:var(--muted);text-align:right}
+  .hs-track{background:#f1f4f8;border-radius:7px;height:20px;position:relative;overflow:hidden}
+  .hs-fill{height:100%;display:block}
+  .dev-list{display:flex;flex-direction:column;gap:10px}
+  .dev-row{display:grid;grid-template-columns:14px 1fr 76px;gap:10px;align-items:center}
+  .dev-row .dot{width:9px;height:9px;border-radius:50%}
+  .dev-row .name{font-size:13px}
+  .dev-row .amt{font-size:12px;text-align:right;font-weight:600}
+  .lb{font-size:12px;color:var(--muted)}
+  .dev-track{background:#f1f4f8;border-radius:7px;height:9px;position:relative;overflow:hidden}
+  .dev-fill{position:absolute;left:50%;height:100%;border-radius:7px}
+  .chart-tip{font-size:12px;color:var(--muted);margin-top:2px}
+
   .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
   .tab{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:6px 14px;font-size:13px;cursor:pointer;color:var(--muted);transition:.15s;display:flex;align-items:center;gap:6px}
   .tab .sw{width:8px;height:8px;border-radius:50%}
@@ -173,8 +204,16 @@
   <section class="stats" id="stats"></section>
 
   <section class="panel">
-    <h2>分类预算 vs 实际支出</h2>
-    <div id="chart"></div>
+    <div class="chart-head">
+      <h2>预算分析图表</h2>
+      <div class="chart-tabs" id="chartTabs">
+        <button class="chart-tab active" data-c="c1">预算vs实际</button>
+        <button class="chart-tab" data-c="c2">预算占比</button>
+        <button class="chart-tab" data-c="c3">已付vs尾款</button>
+        <button class="chart-tab" data-c="c4">超支预警</button>
+      </div>
+    </div>
+    <div class="chart-body" id="chartBody"></div>
   </section>
 
   <div class="tabs" id="tabs"></div>
@@ -309,6 +348,16 @@ function derive(r){
 function render(){
   renderStats(); renderChart(); renderTabs(); renderList();
 }
+function bindChartTabs(){
+  document.querySelectorAll('#chartTabs .chart-tab').forEach(t=>{
+    t.onclick=()=>{
+      document.querySelectorAll('#chartTabs .chart-tab').forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      chartTab=t.dataset.c;
+      renderChart();
+    };
+  });
+}
 function renderStats(){
   let tb=0,ta=0,tp=0,tb2=0;
   data.forEach(r=>{const d=derive(r); tb+=d.budget; ta+=d.actual; tp+=d.paid; tb2+=d.balance;});
@@ -325,17 +374,102 @@ function catAgg(){
   data.forEach(r=>{const d=derive(r); const c=m[r.category]||(m[r.category]={budget:0,actual:0,paid:0,balance:0}); c.budget+=d.budget; c.actual+=d.actual; c.paid+=d.paid; c.balance+=d.balance;});
   return m;
 }
+// 金额截断显示（大型数用 万/k）
+function moneyShort(n){
+  const v=Number(n)||0;
+  if(v>=100000) return (v/10000).toFixed(v%10000===0?0:1)+'万';
+  if(v>=1000) return (v/1000).toFixed(v%1000===0?0:1)+'k';
+  return String(Math.round(v));
+}
+let chartTab='c1';
 function renderChart(){
-  const m=catAgg();
-  const max=Math.max(1,...Object.keys(m).map(c=>Math.max(m[c].budget,m[c].actual)));
-  document.getElementById('chart').innerHTML=Object.keys(CATS).map(c=>{
-    const a=m[c]; if(a.budget===0&&a.actual===0) return '';
-    const bw=Math.max(a.budget/max*100,2), aw=Math.max(a.actual/max*100,2);
+  const body=document.getElementById('chartBody');
+  switch(chartTab){
+    case 'c2': renderChartDough(body,moneyShort); break;
+    case 'c3': renderChartStack(body,moneyShort); break;
+    case 'c4': renderChartDev(body,moneyShort); break;
+    default: renderChartBar(body,moneyShort);
+  }
+}
+function chartBarHtml(m,ms){
+  const cats=Object.keys(CATS).filter(c=>m[c]&&(m[c].budget>0||m[c].actual>0));
+  if(!cats.length) return '<p style="color:var(--muted);font-size:13px">暂无数据，添加记录后这里会显示分类对比。</p>';
+  const max=Math.max(1,...cats.map(c=>Math.max(m[c].budget,m[c].actual)));
+  return cats.map(c=>{
+    const a=m[c]; const bw=Math.max(a.budget/max*100,2), aw=Math.max(a.actual/max*100,2);
     return `<div class="bar-row"><div class="cat">${c}</div><div>
       <div class="bar-track"><div class="bar-fill" style="width:${bw}%;background:${CATS[c].raw}33"></div><span class="bar-label out">${fmt(a.budget)} 预算</span></div>
       <div class="bar-track" style="margin-top:5px"><div class="bar-fill" style="width:${aw}%;background:${CATS[c].raw}"></div><span class="bar-label">${fmt(a.actual)} 实际</span></div>
     </div></div>`;
-  }).join('') || '<p style="color:var(--muted);font-size:13px">暂无数据，添加记录后这里会显示分类对比。</p>';
+  }).join('')+'<p class="chart-tip">同一类别两条柱：浅色=预算，深色=实际，柱高差即超支/结余。</p>';
+}
+function renderChartBar(body,ms){ body.innerHTML=chartBarHtml(catAgg(),ms); }
+
+function renderChartDough(body,ms){
+  const m=catAgg();
+  const cats=Object.keys(CATS).filter(c=>m[c]&&m[c].budget>0);
+  const total=cats.reduce((s,c)=>s+m[c].budget,0);
+  if(!cats.length){ body.innerHTML='<p style="color:var(--muted);font-size:13px">暂无预算数据。</p>'; return; }
+  const R=82, C=2*Math.PI*R, GAP=6, cx=95, cy=95;
+  let cum=0;
+  const svg=cats.map(c=>{
+    const len=Math.max(m[c].budget/total*C - GAP, 1);
+    const seg=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${CATS[c].raw}" stroke-width="26"
+      stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-cum}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    cum += m[c].budget/total*C;
+    return seg;
+  }).join('');
+  const center=`<text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2933">总预算</text>
+    <text x="${cx}" y="${cy+18}" text-anchor="middle" font-size="15" font-weight="600" fill="#1f2933">${ms(total)}</text>`;
+  const legend=cats.map(c=>{
+    const pc=(m[c].budget/total*100).toFixed(1);
+    return `<div class="row"><span class="sw" style="background:${CATS[c].raw}"></span><span class="lb">${c}</span><span class="vl">${ms(m[c].budget)}</span><span class="pc">·${pc}%</span></div>`;
+  }).join('');
+  body.innerHTML=`<div class="dough-wrap">
+    <svg class="dough-svg" width="190" height="190" role="img" aria-label="预算占比环形图">${svg}${center}</svg>
+    <div class="dough-legend">${legend}<span class="lb" style="font-size:12px">按预算口径统计，非实际花费</span></div>
+  </div>`;
+}
+
+function renderChartStack(body,ms){
+  const m=catAgg();
+  const cats=Object.keys(CATS).filter(c=>m[c]&&(m[c].paid>0||m[c].balance>0));
+  if(!cats.length){ body.innerHTML='<p style="color:var(--muted);font-size:13px">暂无已付/尾款数据。</p>'; return; }
+  const max=Math.max(1,...cats.map(c=>m[c].paid+m[c].balance));
+  const rows=cats.map(c=>{
+    const a=m[c]; const pw=Math.max(a.paid/max*100,1.5), bw=Math.max(a.balance/max*100,1.5);
+    return `<div class="hs-row"><div class="cat">${c}</div>
+      <div class="hs-track"><span class="hs-fill" style="width:${pw}%;background:var(--ok)"></span><span class="hs-fill" style="width:${bw}%;background:#cbd5e1"></span>
+        <span class="bar-label out">${fmt(a.paid)}已付 · ${fmt(a.balance)}尾款</span></div>
+      <div class="val">${a.balance<=0?'✅结清':'欠'+ms(a.balance)}</div></div>`;
+  }).join('');
+  body.innerHTML=`<div class="hstack">${rows}</div>
+    <div style="display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:6px">
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--ok)"></span>已付(定金+进度款)</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:#cbd5e1"></span>剩余尾款</span>
+    </div>`;
+}
+
+function renderChartDev(body,ms){
+  const items=data.map(r=>({name:r.name,c:r.category,dev:(Number(r.actual)||0)-(Number(r.budget)||0)}))
+    .filter(x=>x.dev!==0)
+    .sort((a,b)=>Math.abs(b.dev)-Math.abs(a.dev)).slice(0,8);
+  if(!items.length){ body.innerHTML='<p style="color:var(--muted);font-size:13px">暂无预算偏差项。</p>'; return; }
+  const max=Math.max(1,...items.map(x=>Math.abs(x.dev)));
+  const rows=items.map(x=>{
+    const w=Math.max(Math.abs(x.dev)/max*50,0.8);
+    const over=x.dev>0;
+    const side=over?'left:50%':'left:calc(50% - '+w+'%)';
+    const color=over?'var(--danger)':'var(--ok)';
+    const sign=over?'+':'−';
+    const amt=over?'超支':'结余';
+    return `<div class="dev-row"><span class="dot" style="background:${color}"></span>
+      <div class="name">${escapeHtml(x.name)} <span class="lb" style="font-size:11px;color:var(--muted)">${x.c}</span>
+        <div class="dev-track"><span class="dev-fill" style="width:${w}%;${side};background:${color}"></span></div></div>
+      <div class="amt" style="color:${color}">${sign}${ms(Math.abs(x.dev))} ${amt}</div></div>`;
+  }).join('');
+  body.innerHTML=`<div class="dev-list">${rows}</div>
+    <p class="chart-tip">以中线为基准：右侧=超支(红)，左侧=结余(绿)，取偏差绝对值最大的前 8 项。</p>`;
 }
 function renderTabs(){
   const m=catAgg();
@@ -671,6 +805,7 @@ async function boot(){
     document.getElementById('uname').textContent=me;
     // 管理员显示后台按钮
     document.getElementById('btnAdmin').style.display = (myRole==='admin') ? '' : 'none';
+    bindChartTabs();
     await refresh();
   }else{
     document.getElementById('auth').classList.remove('hidden');
