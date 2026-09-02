@@ -94,7 +94,7 @@ app.use(cookieSession({
 app.use(express.static(path.join(__dirname, 'public')));
 
 const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
-const uid = () => 'r' + Date.now() + Math.random().toString(36).slice(2, 8);
+function uid(){ return 'r' + Date.now() + Math.random().toString(36).slice(2, 8); }
 
 // ---------- 图形验证码（零依赖，手写 SVG）----------
 const captchaStore = new Map(); // id -> {code, expires}
