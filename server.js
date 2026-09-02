@@ -21,6 +21,7 @@ db.exec(`
     status TEXT DEFAULT 'active',
     last_login_ip TEXT DEFAULT '',
     last_login_at TEXT,
+    total_budget REAL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS items(
@@ -49,6 +50,7 @@ db.exec(`
   add('status', "status TEXT DEFAULT 'active'");
   add('last_login_ip', "last_login_ip TEXT DEFAULT ''");
   add('last_login_at', "last_login_at TEXT");
+  add('total_budget', "total_budget REAL DEFAULT 0");
 })();
 
 // ---------- 应用 ----------
@@ -239,8 +241,16 @@ app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true 
 
 app.get('/api/me', (req, res) => {
   if (!req.session.userId) return res.json({ user: null });
-  const u = db.prepare('SELECT username, role, status FROM users WHERE id=?').get(req.session.userId);
-  res.json({ user: u ? u.username : null, role: u ? u.role : null, status: u ? u.status : null });
+  const u = db.prepare('SELECT username, role, status, total_budget FROM users WHERE id=?').get(req.session.userId);
+  res.json({ user: u ? u.username : null, role: u ? u.role : null, status: u ? u.status : null, total_budget: u ? (u.total_budget||0) : 0 });
+});
+
+// 设置/修改我的总预算总额
+app.put('/api/budget', requireAuth, (req, res) => {
+  const v = Number((req.body||{}).total_budget);
+  if (!Number.isFinite(v) || v < 0) return res.status(400).json({ error: '预算金额无效' });
+  db.prepare('UPDATE users SET total_budget=? WHERE id=?').run(v, req.session.userId);
+  res.json({ ok: true, total_budget: v });
 });
 
 // ---------- 记录 CRUD（全部按 user_id 隔离）----------

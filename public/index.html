@@ -73,6 +73,9 @@
   .budget-hero .bh-sub .item .v{font-size:24px;font-weight:700;letter-spacing:-.3px}
   .budget-hero .bh-sub .item .v.neg{color:#ffd6d6}
   .budget-hero .bh-sub .item .v.pos{color:#ffe08a}
+  .budget-hero .bh-actions{margin-top:14px;display:flex;justify-content:flex-end}
+  .budget-hero .bh-actions .btn{background:rgba(255,255,255,.92);border:none;color:#2559d6;font-weight:600;padding:7px 16px;border-radius:9px;font-size:13px}
+  .budget-hero .bh-actions .btn:hover{background:#fff}
   .budget-none{background:var(--card);border:1px dashed var(--line);border-radius:14px;padding:24px;color:var(--muted);text-align:center;margin-bottom:16px;font-size:14px}
 
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;box-shadow:var(--shadow);margin-bottom:18px}
@@ -320,6 +323,22 @@
   </div>
 </div>
 
+<!-- 设置总预算 -->
+<div class="mask" id="budgetMask">
+  <div class="modal">
+    <h3>设置总预算</h3>
+    <div class="field">
+      <label>总预算总额 (元)</label>
+      <input id="b_total" type="number" min="0" step="0.01" placeholder="如 500000">
+      <p class="hint" id="b_hint"></p>
+    </div>
+    <div class="modal-ops">
+      <button type="button" class="btn ghost" id="btnBudgetCancel">取消</button>
+      <button type="button" class="btn primary" id="btnBudgetSave">保存</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -330,6 +349,7 @@ const CATS = {
 let data = [];
 let activeCat = '全部';
 let me = null;
+let totalBudget = 0;   // 手动设置的总预算总额(账号级), 0=未设置
 
 // ---------- API ----------
 async function api(path, opts={}){
@@ -384,11 +404,18 @@ function bindChartTabs(){
 }
 function renderBudgetHero(){
   const el=document.getElementById('budgetHero');
-  let tb=0,ta=0,tp=0;
-  data.forEach(r=>{const d=derive(r); tb+=d.budget; ta+=d.actual; tp+=d.paid;});
-  if(tb<=0){ el.innerHTML='<div class="budget-none">请先为项目设置预算，这里会显示「总预算 · 已使用 · 剩余预算」。</div>'; return; }
-  const remain_actual=tb-ta;             // 剩余预算(按实际花费口径, 超支为负)
-  const remain_paid=tb-tp;               // 可付余额(按已付口径, 超支为负)
+  let ta=0,tp=0;
+  data.forEach(r=>{const d=derive(r); ta+=d.actual; tp+=d.paid;});
+  // 未设置总预算: 显示设置引导
+  if(!(totalBudget>0)){
+    el.innerHTML=`<div class="budget-none">还没有设置总预算。点击「设置总预算」输入你准备花的总盘子，即可看到使用进度与剩余预算。
+      <div style="margin-top:12px"><button class="btn primary" id="btnSetBudget">设置总预算</button></div></div>`;
+    const b=document.getElementById('btnSetBudget'); if(b) b.onclick=openBudgetModal;
+    return;
+  }
+  const tb=totalBudget;                      // 手动设定的总预算总额
+  const remain_actual=tb-ta;                 // 剩余(按实际花费, 超支为负)
+  const remain_paid=tb-tp;                   // 可付余额(按已付, 超付为负)
   const rawPct=tb>0?(ta/tb*100):0;
   const usedPct=Math.min(rawPct,100);
   const actOver=ta>tb;
@@ -416,10 +443,41 @@ function renderBudgetHero(){
         <div class="v ${remainCls(remain_paid)}">${fmt(Math.abs(remain_paid))}</div>
       </div>
     </div>
+    <div class="bh-actions"><button class="btn primary" id="btnEditBudget">调整总预算</button></div>
   </div>`;
+  const e=document.getElementById('btnEditBudget'); if(e) e.onclick=openBudgetModal;
 }
+function openBudgetModal(){
+  const mask=document.getElementById('budgetMask');
+  document.getElementById('b_total').value=totalBudget>0?totalBudget:'';
+  updateBudgetHint();
+  mask.classList.add('show');
+}
+function closeBudgetModal(){ document.getElementById('budgetMask').classList.remove('show'); }
+function updateBudgetHint(){
+  const v=Number(document.getElementById('b_total').value)||0;
+  const ta=data.reduce((s,r)=>s+(Number(r.actual)||0),0);
+  const tp=data.reduce((s,r)=>s+((Number(r.deposit)||0)+(Number(r.other)||0)),0);
+  document.getElementById('b_hint').textContent = v>0
+    ? `设 ${fmt(v)}：按实际花费剩余 ${fmt(v-ta)}，按已付可付 ${fmt(v-tp)}。`
+    : '输入你准备花的总金额(如 500000 / 50万)。';
+}
+// 总预算弹窗事件
+const budgetMask=document.getElementById('budgetMask');
+document.getElementById('b_total').addEventListener('input', updateBudgetHint);
+document.getElementById('btnBudgetCancel').onclick=closeBudgetModal;
+document.getElementById('btnBudgetSave').onclick=async()=>{
+  const v=Number(document.getElementById('b_total').value)||0;
+  if(v<0){ document.getElementById('b_hint').textContent='金额不能为负'; return; }
+  try{
+    const r=await api('/budget',{method:'PUT',body:JSON.stringify({total_budget:v})});
+    totalBudget=r.total_budget;
+    closeBudgetModal(); renderBudgetHero(); renderStats(); toast('总预算已保存');
+  }catch(e){ document.getElementById('b_hint').textContent=e.message; }
+};
 function renderStats(){
-  let tb=0,ta=0,tp=0,tb2=0;  data.forEach(r=>{const d=derive(r); tb+=d.budget; ta+=d.actual; tp+=d.paid; tb2+=d.balance;});
+  let itemBudget=0,ta=0,tp=0,tb2=0;  data.forEach(r=>{const d=derive(r); itemBudget+=d.budget; ta+=d.actual; tp+=d.paid; tb2+=d.balance;});
+  const tb=totalBudget>0?totalBudget:itemBudget;   // 总预算基准: 已设置用设定值, 否则用记录预算求和
   const diff=ta-tb;
   const usePct=tb>0?(ta/tb*100):0;
   document.getElementById('stats').innerHTML=`
@@ -858,7 +916,7 @@ document.getElementById('btnAdminBack').onclick=toggleAdmin;
 
 // ---------- 启动 ----------
 async function boot(){
-  try{ const r=await api('/me'); me=r.user; myRole=r.role; }catch(e){ me=null; myRole=null; }
+  try{ const r=await api('/me'); me=r.user; myRole=r.role; totalBudget=r.total_budget||0; }catch(e){ me=null; myRole=null; totalBudget=0; }
   if(me){
     document.getElementById('auth').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
