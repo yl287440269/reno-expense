@@ -10,12 +10,17 @@ const DATA_DIR = process.env.DATA_DIR || '/data';
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const db = new Database(path.join(DATA_DIR, 'reno.db'));
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON'); // 启用外键约束，使 ON DELETE CASCADE 生效
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'user',
+    status TEXT DEFAULT 'active',
+    last_login_ip TEXT DEFAULT '',
+    last_login_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS items(
@@ -36,6 +41,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_items_user ON items(user_id);
 `);
 
+// 存量库迁移：若 users 表缺少新列则补上（旧库兼容）
+(function migrate(){
+  const cols = db.prepare("PRAGMA table_info(users)").all().map(c=>c.name);
+  const add = (name, ddl) => { if(!cols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${ddl}`); };
+  add('role', "role TEXT DEFAULT 'user'");
+  add('status', "status TEXT DEFAULT 'active'");
+  add('last_login_ip', "last_login_ip TEXT DEFAULT ''");
+  add('last_login_at', "last_login_at TEXT");
+})();
+
 // ---------- 应用 ----------
 const app = express();
 app.use(express.json());
@@ -50,6 +65,56 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const uid = () => 'r' + Date.now() + Math.random().toString(36).slice(2, 8);
+
+// ---------- 图形验证码（零依赖，手写 SVG）----------
+const captchaStore = new Map(); // id -> {code, expires}
+const CAP_EXPIRE = 5 * 60 * 1000; // 5 分钟
+function makeCaptcha() {
+  // 去除易混淆字符 0O1lI
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let code = '';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  const id = 'c' + Date.now() + Math.random().toString(36).slice(2, 8);
+  captchaStore.set(id, { code, expires: Date.now() + CAP_EXPIRE });
+  // 清理过期
+  for (const [k, v] of captchaStore) if (v.expires < Date.now()) captchaStore.delete(k);
+  return { id, code };
+}
+function verifyCaptcha(id, input) {
+  if (!id || !input) return false;
+  const rec = captchaStore.get(id);
+  if (!rec) return false;
+  captchaStore.delete(id); // 一次性使用
+  return rec.expires >= Date.now() && rec.code.toLowerCase() === String(input).trim().toLowerCase();
+}
+function svgCaptcha(code) {
+  const w = 120, h = 40;
+  const colors = ['#2f6fed','#a855f7','#f59e0b','#10b981','#ef4444'];
+  let chars = '';
+  for (let i = 0; i < code.length; i++) {
+    const x = 14 + i * 26;
+    const y = 26 + Math.floor(Math.random() * 7);
+    const rot = Math.floor(Math.random() * 30) - 15;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    chars += `<text x="${x}" y="${y}" font-size="30" font-weight="700" font-family="Arial" fill="${color}" transform="rotate(${rot} ${x} ${y})">${code[i]}</text>`;
+  }
+  // 干扰线
+  let lines = '';
+  for (let i = 0; i < 4; i++) {
+    const x1 = Math.random()*w, y1 = Math.random()*h, x2 = Math.random()*w, y2 = Math.random()*h;
+    lines += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#cbd5e1" stroke-width="1"/>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+    <rect width="${w}" height="${h}" fill="#f1f4f8"/>
+    ${lines}${chars}
+  </svg>`;
+}
+// 获取客户端 IP（兼容 X-Forwarded-For）
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) return String(fwd).split(',')[0].trim();
+  return (req.socket && req.socket.remoteAddress) || '';
+}
 
 // 简单 CSV 解析（支持双引号包裹、逗号内逗号）
 function parseCSV(text) {
@@ -129,12 +194,27 @@ function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: '未登录' });
   next();
 }
+function requireAdmin(req, res, next) {
+  if (!req.session.userId) return res.status(401).json({ error: '未登录' });
+  const u = db.prepare('SELECT role FROM users WHERE id=?').get(req.session.userId);
+  if (!u || u.role !== 'admin') return res.status(403).json({ error: '无管理员权限' });
+  next();
+}
 
 // ---------- 认证 ----------
+app.get('/api/captcha', (req, res) => {
+  const { id, code } = makeCaptcha();
+  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Captcha-Id', id);
+  res.send(svgCaptcha(code));
+});
+
 app.post('/api/register', (req, res) => {
-  const { username, password } = req.body || {};
+  const { username, password, captchaId, captcha } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: '用户名和密码必填' });
   if (String(password).length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+  if (!verifyCaptcha(captchaId, captcha)) return res.status(400).json({ error: '验证码错误或已失效' });
   if (db.prepare('SELECT id FROM users WHERE username=?').get(username))
     return res.status(409).json({ error: '用户名已存在' });
   const hash = bcrypt.hashSync(String(password), 10);
@@ -148,16 +228,19 @@ app.post('/api/login', (req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE username=?').get(username);
   if (!u || !bcrypt.compareSync(String(password), u.password_hash))
     return res.status(401).json({ error: '用户名或密码错误' });
+  if (u.status === 'frozen') return res.status(403).json({ error: '账号已被冻结，请联系管理员' });
   req.session.userId = u.id;
-  res.json({ ok: true, username: u.username });
+  db.prepare('UPDATE users SET last_login_ip=?, last_login_at=datetime(\'now\') WHERE id=?')
+    .run(clientIp(req), u.id);
+  res.json({ ok: true, username: u.username, role: u.role });
 });
 
 app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true }); });
 
 app.get('/api/me', (req, res) => {
   if (!req.session.userId) return res.json({ user: null });
-  const u = db.prepare('SELECT username FROM users WHERE id=?').get(req.session.userId);
-  res.json({ user: u ? u.username : null });
+  const u = db.prepare('SELECT username, role, status FROM users WHERE id=?').get(req.session.userId);
+  res.json({ user: u ? u.username : null, role: u ? u.role : null, status: u ? u.status : null });
 });
 
 // ---------- 记录 CRUD（全部按 user_id 隔离）----------
@@ -217,6 +300,46 @@ app.post('/api/import', requireAuth, (req, res) => {
   });
   tx(records);
   res.json({ ok: true, imported: count, skipped });
+});
+
+// ---------- 管理员操作 ----------
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT u.id, u.username, u.role, u.status, u.last_login_ip, u.last_login_at, u.created_at,
+           (SELECT COUNT(*) FROM items i WHERE i.user_id = u.id) AS item_count
+    FROM users u ORDER BY u.id
+  `).all();
+  res.json(rows);
+});
+
+app.post('/api/admin/users/:id/freeze', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: '无效 id' });
+  const u = db.prepare('SELECT role FROM users WHERE id=?').get(id);
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  if (u.role === 'admin') return res.status(403).json({ error: '不能冻结管理员账号' });
+  db.prepare('UPDATE users SET status=? WHERE id=?').run('frozen', id);
+  res.json({ ok: true, status: 'frozen' });
+});
+
+app.post('/api/admin/users/:id/unfreeze', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: '无效 id' });
+  const u = db.prepare('SELECT id FROM users WHERE id=?').get(id);
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  db.prepare('UPDATE users SET status=? WHERE id=?').run('active', id);
+  res.json({ ok: true, status: 'active' });
+});
+
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: '无效 id' });
+  const u = db.prepare('SELECT role FROM users WHERE id=?').get(id);
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  if (u.role === 'admin') return res.status(403).json({ error: '不能删除管理员账号' });
+  // 删除用户（items 通过外键 ON DELETE CASCADE 级联删除）
+  db.prepare('DELETE FROM users WHERE id=?').run(id);
+  res.json({ ok: true });
 });
 
 const PORT = process.env.PORT || 3000;
