@@ -66,7 +66,9 @@
   .tab.active .sw{outline:2px solid #fff;outline-offset:-3px}
 
   .list{display:flex;flex-direction:column;gap:12px}
-  .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+  .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);position:relative;border-left-width:5px;border-left-style:solid}
+  .item.done{border-left-color:var(--ok);background:#f4fbf7}
+  .item.doing{border-left-color:var(--warn);background:#fffdf7}
   .item .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
   .item .name{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
   .item .tag{font-size:11px;padding:2px 9px;border-radius:20px;color:#fff;font-weight:600}
@@ -75,6 +77,10 @@
   .icon-btn{border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--muted);padding:4px 8px;border-radius:7px}
   .icon-btn:hover{background:var(--bg);color:var(--text)}
   .icon-btn.del:hover{background:#fef2f2;color:var(--danger)}
+  .statusBadge{font-size:12px;font-weight:700;padding:2px 10px;border-radius:20px;color:#fff;display:inline-flex;align-items:center;gap:5px}
+  .statusBadge.done{background:var(--ok)}
+  .statusBadge.doing{background:var(--warn)}
+  .name .check{color:var(--ok);font-weight:800}
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
   .cell{background:var(--bg);border-radius:9px;padding:9px 11px}
   .cell .k{font-size:11px;color:var(--muted)}
@@ -317,9 +323,11 @@ function renderList(){
   }
   el.innerHTML=items.map(r=>{
     const d=derive(r); const c=CATS[r.category]||CATS['其他'];
-    const statusTxt=d.settled?'<span style="color:var(--ok);font-weight:600">✓ 已结清</span>':`<span style="color:var(--warn);font-weight:600">待付尾款 ${fmt(d.balance)}</span>`;
-    return `<div class="item"><div class="top"><div>
-      <div class="name">${escapeHtml(r.name)} <span class="tag" style="background:${c.raw}">${r.category}</span></div>
+    const state=d.settled?'done':'doing';
+    const badge=d.settled?'<span class="statusBadge done">✓ 已完成</span>':`<span class="statusBadge doing">● 进行中</span>`;
+    const check=d.settled?'<span class="check">✓</span>':'';
+    return `<div class="item ${state}"><div class="top"><div>
+      <div class="name">${check}${escapeHtml(r.name)} <span class="tag" style="background:${c.raw}">${r.category}</span> ${badge}</div>
       <div class="meta">${r.supplier?escapeHtml(r.supplier)+' · ':''}${r.date||'未填日期'}${r.note?' · '+escapeHtml(r.note):''}</div>
     </div><div class="ops">
       <button class="icon-btn" data-edit="${r.id}">编辑</button>
@@ -332,7 +340,7 @@ function renderList(){
       <div class="cell"><div class="k">尾款</div><div class="v ${d.settled?'green':'red'}">${fmt(d.balance)}</div></div>
     </div>
     <div class="progress ${d.settled?'ok':''}"><span style="width:${d.progress}%"></span></div>
-    <div class="pstatus"><span>付款进度 ${d.progress.toFixed(0)}%</span><span>${statusTxt}</span></div></div>`;
+    <div class="pstatus"><span>付款进度 ${d.progress.toFixed(0)}%</span><span>${d.settled?'':'待付尾款 '+fmt(d.balance)}</span></div></div>`;
   }).join('');
   el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openModal(b.dataset.edit));
   el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>del(b.dataset.del));
