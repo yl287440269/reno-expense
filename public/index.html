@@ -69,11 +69,11 @@
   .budget-hero .bh-filllabel{display:flex;justify-content:space-between;font-size:12px;opacity:.9}
   .budget-hero .bh-filllabel b{font-weight:700}
   .budget-hero .bh-sub{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2)}
-  .budget-hero .bh-sub .item{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:12px;padding:12px 14px;box-shadow:none}
-  .budget-hero .bh-sub .item .k{font-size:12px;opacity:1;color:#ffffff;letter-spacing:.2px;margin-bottom:5px;font-weight:500}
-  .budget-hero .bh-sub .item .v{font-size:24px;font-weight:700;letter-spacing:-.3px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.15)}
-  .budget-hero .bh-sub .item .v.neg{color:#ffd6d6}
-  .budget-hero .bh-sub .item .v.pos{color:#ffe08a}
+  .budget-hero .bh-sub .bh-c{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:12px;padding:12px 14px;box-shadow:none}
+  .budget-hero .bh-sub .bh-c .k{font-size:12px;opacity:1;color:#ffffff;letter-spacing:.2px;margin-bottom:5px;font-weight:500}
+  .budget-hero .bh-sub .bh-c .v{font-size:24px;font-weight:700;letter-spacing:-.3px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.15)}
+  .budget-hero .bh-sub .bh-c .v.neg{color:#ffd6d6}
+  .budget-hero .bh-sub .bh-c .v.pos{color:#ffe08a}
   .budget-hero .bh-actions{margin-top:14px;display:flex;justify-content:flex-end}
   .budget-hero .bh-actions .btn{background:rgba(255,255,255,.92);border:none;color:#2559d6;font-weight:600;padding:7px 16px;border-radius:9px;font-size:13px}
   .budget-hero .bh-actions .btn:hover{background:#fff}
@@ -532,11 +532,11 @@ function renderBudgetHero(){
     <div class="bh-bar"><div class="bh-fill ${barClass}" style="width:${usedPct}%"></div></div>
     <div class="bh-filllabel"><span>预算已用 <b>${rawPct.toFixed(0)}%</b></span><span>${fmt(ta)} / ${fmt(tb)}</span></div>
     <div class="bh-sub">
-      <div class="item">
+      <div class="bh-c">
         <div class="k">${remain_actual<0?'超支金额(按实际花费)':'剩余预算(按实际花费)'}</div>
         <div class="v ${remainCls(remain_actual)}">${fmt(Math.abs(remain_actual))}</div>
       </div>
-      <div class="item">
+      <div class="bh-c">
         <div class="k">${remain_paid<0?'超付金额(按已付/预算)':'可付余额(按已付/预算)'}</div>
         <div class="v ${remainCls(remain_paid)}">${fmt(Math.abs(remain_paid))}</div>
       </div>
