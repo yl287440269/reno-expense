@@ -177,6 +177,52 @@
   .empty{text-align:center;color:var(--muted);padding:50px 20px;background:var(--card);border:1px dashed var(--line);border-radius:12px}
   .empty .big{font-size:40px;margin-bottom:8px}
 
+  .list-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 10px}
+  .view-toggle{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:3px;gap:2px}
+  .view-toggle .vt-btn{border:none;background:transparent;padding:6px 14px;font-size:13px;color:var(--muted);cursor:pointer;border-radius:17px;transition:.15s}
+  .view-toggle .vt-btn.active{background:var(--text);color:#fff}
+  .list-info{font-size:12px;color:var(--muted)}
+
+  /* 表格视图 */
+  .itable{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:13px;box-shadow:var(--shadow)}
+  .itable th{background:var(--bg);color:var(--muted);font-weight:600;font-size:12px;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .itable td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .itable tr:last-child td{border-bottom:none}
+  .itable tr:hover td{background:#fafbfc}
+  .itable .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .itable .r{color:var(--danger)} .itable .g{color:var(--ok)}
+  .itable .nmcell{display:flex;align-items:center;gap:6px}
+  .itable .nmcell .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .itable .tagonly{font-size:11px;padding:2px 8px;border-radius:20px;color:#fff;font-weight:600;white-space:nowrap}
+  .itable .icbtn{border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--muted);padding:2px 6px;border-radius:6px}
+  .itable .icbtn:hover{background:var(--bg);color:var(--text)}
+  .itable .icbtn.d:hover{background:#fef2f2;color:var(--danger)}
+  .itable .nname{font-weight:600}
+
+  /* 分组视图 */
+  .group-list{display:flex;flex-direction:column;gap:10px}
+  .group-card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+  .group-head{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;transition:.15s}
+  .group-head:hover{background:#fafbfc}
+  .group-head .dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+  .group-head .gname{font-weight:700;font-size:14px}
+  .group-head .gcnt{font-size:12px;color:var(--muted)}
+  .group-head .gsum{margin-left:auto;font-size:13px;color:var(--muted)}
+  .group-head .gsum b{color:var(--text)}
+  .group-head .garrow{width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:var(--muted);transition:transform .2s;flex-shrink:0}
+  .group-card.open .garrow{transform:rotate(180deg)}
+  .group-body{display:none;border-top:1px solid var(--line)}
+  .group-card.open .group-body{display:block}
+  .group-body .grow{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:8px 16px;border-bottom:1px solid var(--line);align-items:center}
+  .group-body .grow:last-child{border-bottom:none}
+  .group-body .gname2{font-size:13px;display:flex;gap:6px;align-items:center}
+  .group-body .gname2 .check{color:var(--ok);font-weight:800}
+  .group-body .gname2 .note{font-size:11px;color:var(--muted)}
+  .group-body .gamt{font-size:13px;text-align:right}
+  .group-body .gamt .paid{color:var(--ok);font-size:12px}
+  .group-body .gamt .tail{color:var(--danger);font-size:12px}
+
+
   .mask{position:fixed;inset:0;background:rgba(16,24,40,.45);display:none;align-items:flex-start;justify-content:center;padding:30px 14px;z-index:50;overflow:auto}
   .mask.show{display:flex}
   .modal{background:var(--card);border-radius:16px;width:100%;max-width:480px;padding:22px;box-shadow:0 20px 50px rgba(16,24,40,.25)}
@@ -257,6 +303,15 @@
   </section>
 
   <div class="tabs" id="tabs"></div>
+
+  <div class="list-toolbar">
+    <div class="view-toggle" id="viewToggle">
+      <button class="vt-btn" data-view="group">分组</button>
+      <button class="vt-btn" data-view="card">卡片</button>
+      <button class="vt-btn" data-view="table">表格</button>
+    </div>
+    <div class="list-info" id="listInfo"></div>
+  </div>
 
   <section class="list" id="list"></section>
 </div>
@@ -371,6 +426,7 @@ const catColor = idx => ['#2f6fed','#a855f7','#f59e0b','#10b981','#94a3b8','#ef4
 let data = [];
 let activeCat = '全部';
 let payFilter = 'all';   // 付款状态筛选: all=全部, paid=付完全款, unpaid=未付完全款
+let viewMode = 'group';   // 列表视图: group=分组, card=卡片, table=表格
 let me = null;
 let totalBudget = 0;   // 手动设置的总预算总额(账号级), 0=未设置
 
@@ -657,18 +713,41 @@ function renderTabs(){
     };
   });
 }
-function renderList(){
-  const el=document.getElementById('list');
+// 根据当前分类/付款筛选，返回过滤后的记录
+function filteredItems(){
   let items=data.slice();
   if(activeCat!=='全部') items=items.filter(r=>r.category===activeCat);
   if(payFilter==='paid') items=items.filter(r=>{const d=derive(r); return d.settled;});
   else if(payFilter==='unpaid') items=items.filter(r=>{const d=derive(r); return !d.settled && d.actual>0;});
+  return items;
+}
+function renderList(){
+  const el=document.getElementById('list');
+  const items=filteredItems();
+  const filterOn = activeCat!=='全部' || payFilter!=='all';
   if(items.length===0){
-    const filterOn = activeCat!=='全部' || payFilter!=='all';
     el.innerHTML=`<div class="empty"><div class="big">📋</div>${data.length===0?'还没有任何记录，点右上角「添加记录」开始吧':(filterOn?'当前筛选条件下暂无记录':'该分类下暂无记录')}</div>`;
-    return;
+    updateListInfo(0); return;
   }
-  el.innerHTML=items.map(r=>{
+  if(viewMode==='table') el.innerHTML=renderListTable(items);
+  else if(viewMode==='card') el.innerHTML=renderListCard(items);
+  else el.innerHTML=renderListGroup(items);
+  el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openModal(b.dataset.edit));
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>del(b.dataset.del));
+  // 分组视图的折叠交互
+  el.querySelectorAll('.group-head').forEach(h=>h.onclick=()=>{ h.parentElement.classList.toggle('open'); });
+  updateListInfo(items.length);
+}
+function updateListInfo(n){
+  const s=document.getElementById('listInfo');
+  if(!s) return;
+  const cat=activeCat==='全部'?'':activeCat;
+  const pay=payFilter==='paid'?' · 已付清':payFilter==='unpaid'?' · 未付清':'';
+  s.textContent=n?`共 ${n} 条${cat?' · '+cat:''}${pay}`:'';
+}
+// 卡片视图（原每个记录一张大卡片）
+function renderListCard(items){
+  return items.map(r=>{
     const d=derive(r); const c=catInfo(r.category);
     const state=d.settled?'done':'doing';
     const badge=d.settled?'<span class="statusBadge done">✓ 已完成</span>':`<span class="statusBadge doing">● 进行中</span>`;
@@ -689,8 +768,64 @@ function renderList(){
     <div class="progress ${d.settled?'ok':''}"><span style="width:${d.progress}%"></span></div>
     <div class="pstatus"><span>付款进度 ${d.progress.toFixed(0)}%</span><span>${d.settled?'':'待付尾款 '+fmt(d.balance)}</span></div></div>`;
   }).join('');
-  el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openModal(b.dataset.edit));
-  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>del(b.dataset.del));
+}
+// 表格视图（每行一条，最紧凑）
+function renderListTable(items){
+  const row=(r)=>{
+    const d=derive(r); const c=catInfo(r.category);
+    return `<tr>
+      <td><div class="nmcell"><span class="dot" style="background:${c.raw}"></span><span class="nname">${d.settled?'<span class="check" style="color:var(--ok)">✓</span> ':''}${escapeHtml(r.name)}</span></div></td>
+      <td><span class="tagonly" style="background:${c.raw}">${r.category}</span></td>
+      <td class="num">${fmt(d.actual)}</td>
+      <td class="num">${fmt(d.paid)}</td>
+      <td class="num ${d.settled?'g':'r'}">${fmt(d.balance)}</td>
+      <td>${d.settled?'<span class="statusBadge done">✓ 已完成</span>':'<span class="statusBadge doing">● 进行中</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="icbtn" data-edit="${r.id}">编辑</button>
+        <button class="icbtn d" data-del="${r.id}">删除</button>
+      </td>
+    </tr>`;
+  };
+  return `<table class="itable"><thead><tr>
+    <th>名称</th><th>分类</th><th style="text-align:right">实际</th><th style="text-align:right">已付</th><th style="text-align:right">尾款</th><th>状态</th><th></th>
+  </tr></thead><tbody>${items.map(row).join('')}</tbody></table>`;
+}
+// 分组视图（默认只显示分类汇总，点开展开明细）
+function renderListGroup(items){
+  const catOrder = activeCat!=='全部'?[activeCat]:CAT_SORT.filter(c=>c!=='').concat(activeCat!=='全部'&&!CAT_SORT.includes(activeCat)?[activeCat]:[]);
+  const groups={};
+  items.forEach(r=>{ (groups[r.category]=groups[r.category]||[]).push(r); });
+  const names=catOrder.filter(c=>groups[c]);
+  if(!names.length) Object.keys(groups).forEach(c=>names.push(c));
+  const block=names.map(cn=>{
+    const rows=groups[cn]; const c=catInfo(cn);
+    let ta=0,tp=0,tb=0; rows.forEach(r=>{const d=derive(r); ta+=d.actual; tp+=d.paid; tb+=d.balance;});
+    const body=rows.map(r=>{
+      const d=derive(r); const check=d.settled?'<span class="check">✓</span>':'';
+      return `<div class="grow"><div class="gname2">${check}${escapeHtml(r.name)}<span class="note">${r.date||''}</span></div>
+        <div class="gamt">${fmt(d.actual)}<div class="paid">已付 ${fmt(d.paid)}</div></div>
+        <div style="display:flex;gap:6px"><button class="icbtn" data-edit="${r.id}">编辑</button><button class="icbtn d" data-del="${r.id}">删除</button></div></div>`;
+    }).join('');
+    return `<div class="group-card">
+      <div class="group-head"><span class="dot" style="background:${c.raw}"></span>
+        <span class="gname">${cn}</span><span class="gcnt">${rows.length} 条</span>
+        <span class="gsum">实际 <b>${fmt(ta)}</b> · 已付 ${fmt(tp)} · 尾款 ${tb>0?'<span style="color:var(--danger)">'+fmt(tb)+'</span>':'0'}</span>
+        <span class="garrow">▾</span></div>
+      <div class="group-body">${body}</div></div>`;
+  }).join('');
+  return `<div class="group-list">${block}</div>`;
+}
+function bindViewToggle(){
+  document.querySelectorAll('#viewToggle .vt-btn').forEach(b=>{
+    b.onclick=()=>{
+      viewMode=b.dataset.view;
+      document.querySelectorAll('#viewToggle .vt-btn').forEach(x=>x.classList.toggle('active', x===b));
+      render();
+    };
+  });
+  // 初始化选中状态
+  const cur=document.querySelector('#viewToggle .vt-btn[data-view="'+viewMode+'"]');
+  if(cur) cur.classList.add('active');
 }
 
 // ---------- 弹窗 ----------
@@ -1047,6 +1182,7 @@ async function boot(){
     document.getElementById('btnAdmin').style.display = (myRole==='admin') ? '' : 'none';
     bindChartTabs();
     await loadCategories();   // 动态加载分类(构建 CATS/CAT_SORT/下拉)
+    bindViewToggle();         // 绑定列表视图切换
     await refresh();
   }else{
     document.getElementById('auth').classList.remove('hidden');
