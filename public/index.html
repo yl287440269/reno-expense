@@ -780,6 +780,7 @@ function renderListTable(items){
     return `<tr>
       <td><div class="nmcell"><span class="dot" style="background:${c.raw}"></span><span class="nname">${d.settled?'<span class="check" style="color:var(--ok)">✓</span> ':''}${escapeHtml(r.name)}</span></div></td>
       <td><span class="tagonly" style="background:${c.raw}">${r.category}</span></td>
+      <td class="num">${fmt(d.budget)}</td>
       <td class="num">${fmt(d.actual)}</td>
       <td class="num">${fmt(d.paid)}</td>
       <td class="num ${d.settled?'g':'r'}">${fmt(d.balance)}</td>
@@ -791,7 +792,7 @@ function renderListTable(items){
     </tr>`;
   };
   return `<table class="itable"><thead><tr>
-    <th>名称</th><th>分类</th><th style="text-align:right">实际</th><th style="text-align:right">已付</th><th style="text-align:right">尾款</th><th>状态</th><th></th>
+    <th>名称</th><th>分类</th><th style="text-align:right">预算</th><th style="text-align:right">实际</th><th style="text-align:right">已付</th><th style="text-align:right">尾款</th><th>状态</th><th></th>
   </tr></thead><tbody>${items.map(row).join('')}</tbody></table>`;
 }
 // 分组视图（默认只显示分类汇总，点开展开明细）
@@ -807,7 +808,7 @@ function renderListGroup(items){
     const body=rows.map(r=>{
       const d=derive(r); const check=d.settled?'<span class="check">✓</span>':'';
       return `<div class="grow"><div class="gname2">${check}${escapeHtml(r.name)}<span class="note">${r.date||''}</span></div>
-        <div class="gamt">${fmt(d.actual)}<div class="paid">已付 ${fmt(d.paid)}</div></div>
+        <div class="gamt">${fmt(d.actual)}<div style="font-size:12px;white-space:nowrap"><span style="color:var(--muted)">预算 ${fmt(d.budget)}</span> · <span class="paid">已付 ${fmt(d.paid)}</span></div></div>
         <div style="display:flex;gap:6px"><button class="icbtn" data-edit="${r.id}">编辑</button><button class="icbtn d" data-del="${r.id}">删除</button></div></div>`;
     }).join('');
     return `<div class="group-card">
