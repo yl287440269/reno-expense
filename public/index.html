@@ -803,7 +803,7 @@ function renderListGroup(items){
   if(!names.length) Object.keys(groups).forEach(c=>names.push(c));
   const block=names.map(cn=>{
     const rows=groups[cn]; const c=catInfo(cn);
-    let ta=0,tp=0,tb=0; rows.forEach(r=>{const d=derive(r); ta+=d.actual; tp+=d.paid; tb+=d.balance;});
+    let ta=0,tp=0,tb=0,tbd=0; rows.forEach(r=>{const d=derive(r); ta+=d.actual; tp+=d.paid; tb+=d.balance; tbd+=d.budget;});
     const body=rows.map(r=>{
       const d=derive(r); const check=d.settled?'<span class="check">✓</span>':'';
       return `<div class="grow"><div class="gname2">${check}${escapeHtml(r.name)}<span class="note">${r.date||''}</span></div>
@@ -813,7 +813,7 @@ function renderListGroup(items){
     return `<div class="group-card">
       <div class="group-head"><span class="dot" style="background:${c.raw}"></span>
         <span class="gname">${cn}</span><span class="gcnt">${rows.length} 条</span>
-        <span class="gsum">实际 <b>${fmt(ta)}</b> · 已付 ${fmt(tp)} · 尾款 ${tb>0?'<span style="color:var(--danger)">'+fmt(tb)+'</span>':'0'}</span>
+        <span class="gsum">预算 ${fmt(tbd)} · 实际 <b>${fmt(ta)}</b> · 已付 ${fmt(tp)} · 尾款 ${tb>0?'<span style="color:var(--danger)">'+fmt(tb)+'</span>':'0'}</span>
         <span class="garrow">▾</span></div>
       <div class="group-body">${body}</div></div>`;
   }).join('');
