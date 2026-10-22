@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const cookieSession = require('cookie-session');
 
 // ---------- 数据库 ----------
-const DATA_DIR = process.env.DATA_DIR || '/data';
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const db = new Database(path.join(DATA_DIR, 'reno.db'));
 db.pragma('journal_mode = WAL');
@@ -436,4 +436,4 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('reno-expense 已启动，监听端口 ' + PORT));
+app.listen(PORT, '0.0.0.0', () => console.log('reno-expense 已启动，监听端口 ' + PORT));
