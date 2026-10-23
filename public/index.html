@@ -812,7 +812,7 @@ function renderListGroup(items){
     const body=rows.map(r=>{
       const d=derive(r); const check=d.settled?'<span class="check">✓</span>':'';
       return `<div class="grow"><div class="gname2">${check}${escapeHtml(r.name)}<span class="note">${r.date||''}</span></div>
-        <div class="gamt">${fmt(d.actual)}<div style="font-size:12px;white-space:nowrap"><span style="color:var(--muted)">预算 ${fmt(d.budget)}</span> · <span class="paid">已付 ${fmt(d.paid)}</span></div></div>
+        <div class="gamt">${fmt(d.actual)}<div style="font-size:12px;white-space:nowrap"><span style="color:var(--muted)">预算 ${fmt(d.budget)}</span> · <span class="paid">已付 ${fmt(d.paid)}</span>${d.balance>0?' · <span style="color:var(--danger);font-weight:600">尾款 '+fmt(d.balance)+'</span>':''}</div></div>
         <div style="display:flex;gap:6px"><button class="icbtn" data-edit="${r.id}">编辑</button><button class="icbtn d" data-del="${r.id}">删除</button></div></div>`;
     }).join('');
     return `<div class="group-card">
