@@ -29,6 +29,9 @@
   .auth-card input:focus{outline:none;border-color:var(--primary)}
   .block{width:100%;justify-content:center}
   .err{color:var(--danger);font-size:13px;min-height:18px;margin-top:4px;text-align:center}
+  .demo-tip{margin-top:10px;font-size:12px;color:var(--muted);background:var(--bg);border:1px dashed var(--line);border-radius:9px;padding:8px 10px;text-align:center;cursor:pointer;transition:.15s}
+  .demo-tip:hover{background:var(--primary-soft);border-color:var(--primary);color:var(--primary)}
+  .demo-tip b{color:var(--text)}
   .captcha-row{display:flex;gap:8px;margin-bottom:12px}
   .captcha-row input{flex:1;margin-bottom:0}
   .captcha-img{width:120px;height:40px;border:1px solid var(--line);border-radius:9px;background:#f1f4f8}
@@ -268,6 +271,7 @@
       </div>
       <button type="submit" class="btn primary block" id="authSubmit">登录</button>
       <p id="authErr" class="err"></p>
+      <div class="demo-tip" id="demoTip" title="点击自动填入测试账号">测试账号 <b>demo</b> ／ 密码 <b>demo123</b> · 点击填入</div>
     </form>
   </div>
 </div>
@@ -1024,6 +1028,12 @@ function setMode(){
 document.getElementById('tabLogin').onclick=()=>{mode='login';setMode();};
 document.getElementById('tabReg').onclick=()=>{mode='reg';setMode();refreshCaptcha();};
 document.getElementById('captchaImg').onclick=()=>refreshCaptcha();
+document.getElementById('demoTip').onclick=()=>{
+  mode='login'; setMode();
+  document.getElementById('authUser').value='demo';
+  document.getElementById('authPass').value='demo123';
+  document.getElementById('authErr').textContent='';
+};
 
 let captchaId=null;
 async function refreshCaptcha(){
