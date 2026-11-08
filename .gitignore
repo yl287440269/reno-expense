@@ -3,6 +3,10 @@ node_modules/
 
 # 运行时数据（本地数据库、日志）
 data/
+localdata/
+
+# 发布产物
+*.genie
 
 # 离线单机版遗留（非本项目服务文件，不入库）
 /index.html

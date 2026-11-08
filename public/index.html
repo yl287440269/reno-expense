@@ -71,7 +71,9 @@
   .budget-hero .bh-fill.over{background:#ef4444}
   .budget-hero .bh-filllabel{display:flex;justify-content:space-between;font-size:12px;opacity:.9}
   .budget-hero .bh-filllabel b{font-weight:700}
-  .budget-hero .bh-sub{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2)}
+  .budget-hero .bh-sub{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2)}
+  .budget-hero .bh-sub .bh-c .s{font-size:11px;color:#fff;opacity:.8;margin-top:4px;line-height:1.3}
+  @media (max-width:720px){.budget-hero .bh-sub{grid-template-columns:1fr}}
   .budget-hero .bh-sub .bh-c{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:12px;padding:12px 14px;box-shadow:none}
   .budget-hero .bh-sub .bh-c .k{font-size:12px;opacity:1;color:#ffffff;letter-spacing:.2px;margin-bottom:5px;font-weight:500}
   .budget-hero .bh-sub .bh-c .v{font-size:24px;font-weight:700;letter-spacing:-.3px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.15)}
@@ -147,6 +149,9 @@
   .statusBadge{font-size:12px;font-weight:700;padding:2px 10px;border-radius:20px;color:#fff;display:inline-flex;align-items:center;gap:5px}
   .statusBadge.done{background:var(--ok)}
   .statusBadge.doing{background:var(--warn)}
+  .statusBadge.planned{background:#94a3b8}
+  .statusBadge.dep{background:#8b5cf6}
+  .statusBadge.over{background:#6366f1}
   .name .check{color:var(--ok);font-weight:800}
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
   .cell{background:var(--bg);border-radius:9px;padding:9px 11px}
@@ -457,7 +462,8 @@ function toast(msg){
 }
 function fmt(n){
   const v=Number(n)||0;
-  return '¥'+v.toLocaleString('zh-CN',{minimumFractionDigits:0,maximumFractionDigits:2});
+  const s=Math.abs(v).toLocaleString('zh-CN',{minimumFractionDigits:0,maximumFractionDigits:2});
+  return (v<0?'-¥':'¥')+s;   // 负数符号放在货币符号前, 避免出现 ¥-1,234
 }
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -488,10 +494,38 @@ function derive(r){
   const budget=Number(r.budget)||0, actual=Number(r.actual)||0,
         deposit=Number(r.deposit)||0, other=Number(r.other)||0;
   const paid=deposit+other;
-  const balance=Math.max(actual-paid,0);
-  const settled=actual>0 && balance<=0.001;
+  // 已成交(actual>0)的待付尾款
+  const realBalance=Math.max(actual-paid,0);
+  // 已付定金但总价未定(actual=0,paid>0): 用预算估算预计尾款,不影响未购买项
+  const estimated=(actual<=0 && paid>0);
+  const pending=estimated?Math.max(budget-paid,0):0;
+  const balance=realBalance+pending;
+  // 只有预算、一分钱没付、也没定总价 = 计划中(未购买)
+  const planned=(actual<=0 && paid<=0);
+  const settled=(actual>0 && balance<=0.001);
+  const overpaid=(actual>0)?Math.max(paid-actual,0):0;   // 多付金额
   const progress=actual>0?Math.min(paid/actual*100,100):0;
-  return {budget,actual,deposit,other,paid,balance,settled,progress};
+  // 四态: planned(计划中) / deposit(已付定金待定总价) / doing(执行中) / over(已结清但多付) / done(已结清)
+  const status = planned?'planned':(overpaid>0?'over':(settled?'done':(estimated?'deposit':'doing')));
+  return {budget,actual,deposit,other,paid,balance,realBalance,pending,estimated,
+          planned,settled,overpaid,progress,status};
+}
+// 统一汇总口径: 所有卡片/图表/分组共用, 避免各算各的
+function totals(){
+  let budget=0,actual=0,paid=0,balance=0,overpaid=0;
+  let plannedBudget=0,plannedCount=0,doneBudget=0,doneCount=0,depositCount=0;
+  data.forEach(r=>{
+    const d=derive(r);
+    budget+=d.budget; actual+=d.actual; paid+=d.paid;
+    balance+=d.balance; overpaid+=d.overpaid;
+    if(d.planned){ plannedBudget+=d.budget; plannedCount++; }
+    else { doneBudget+=d.budget; doneCount++; }
+    if(d.status==='deposit') depositCount++;
+  });
+  // 已发生项结余(只对已执行/已付定金的项比较预算)
+  const doneDiff=actual-doneBudget;
+  return {budget,actual,paid,balance,overpaid,plannedBudget,plannedCount,
+          doneBudget,doneCount,depositCount,doneDiff};
 }
 
 // ---------- 渲染 ----------
@@ -510,8 +544,8 @@ function bindChartTabs(){
 }
 function renderBudgetHero(){
   const el=document.getElementById('budgetHero');
-  let ta=0,tp=0;
-  data.forEach(r=>{const d=derive(r); ta+=d.actual; tp+=d.paid;});
+  const t=totals();
+  const ta=t.actual, tp=t.paid;
   // 未设置总预算: 显示设置引导
   if(!(totalBudget>0)){
     el.innerHTML=`<div class="budget-none">还没有设置总预算。点击「设置总预算」输入你准备花的总盘子，即可看到使用进度与剩余预算。
@@ -519,9 +553,9 @@ function renderBudgetHero(){
     const b=document.getElementById('btnSetBudget'); if(b) b.onclick=openBudgetModal;
     return;
   }
-  const tb=totalBudget;                      // 手动设定的总预算总额
-  const remain_actual=tb-ta;                 // 剩余(按实际花费, 超支为负)
-  const remain_paid=tb-tp;                   // 可付余额(按已付, 超付为负)
+  const tb=totalBudget;                              // 手动设定的总预算总额
+  const remain_actual=tb-ta;                         // 剩余预算(按实际花费, 超支为负)
+  const remain_free=tb-ta-t.plannedBudget;           // 真正可自由支配(再扣掉已计划未购买的预算)
   const rawPct=tb>0?(ta/tb*100):0;
   const usedPct=Math.min(rawPct,100);
   const actOver=ta>tb;
@@ -543,10 +577,17 @@ function renderBudgetHero(){
       <div class="bh-c">
         <div class="k">${remain_actual<0?'超支金额(按实际花费)':'剩余预算(按实际花费)'}</div>
         <div class="v ${remainCls(remain_actual)}">${fmt(Math.abs(remain_actual))}</div>
+        <div class="s">总预算 − 实际花费</div>
       </div>
       <div class="bh-c">
-        <div class="k">${remain_paid<0?'超付金额(按已付/预算)':'可付余额(按已付/预算)'}</div>
-        <div class="v ${remainCls(remain_paid)}">${fmt(Math.abs(remain_paid))}</div>
+        <div class="k">待付尾款(已发生未结清)</div>
+        <div class="v ${t.balance>0?'neg':''}">${fmt(t.balance)}</div>
+        <div class="s">${t.depositCount>0?`含 ${t.depositCount} 项已付定金·总价待定(估算)`:'已成交但还没付完的钱'}</div>
+      </div>
+      <div class="bh-c">
+        <div class="k">${remain_free<0?'已透支(扣除计划采购)':'可自由支配(扣除计划采购)'}</div>
+        <div class="v ${remainCls(remain_free)}">${fmt(Math.abs(remain_free))}</div>
+        <div class="s">再扣掉 ${t.plannedCount} 项未购买的计划预算 ${fmt(t.plannedBudget)}</div>
       </div>
     </div>
     <div class="bh-actions"><button class="btn primary" id="btnEditBudget">调整总预算</button></div>
@@ -582,16 +623,17 @@ document.getElementById('btnBudgetSave').onclick=async()=>{
   }catch(e){ document.getElementById('b_hint').textContent=e.message; }
 };
 function renderStats(){
-  let itemBudget=0,ta=0,tp=0,tb2=0;  data.forEach(r=>{const d=derive(r); itemBudget+=d.budget; ta+=d.actual; tp+=d.paid; tb2+=d.balance;});
-  const tb=totalBudget>0?totalBudget:itemBudget;   // 总预算基准: 已设置用设定值, 否则用记录预算求和
-  const diff=ta-itemBudget;                        // 预算差额: 对比明细预算合计, 跟随明细预算修改实时变化
-  const usePct=tb>0?(ta/tb*100):0;
+  const t=totals();
+  const tb=totalBudget>0?totalBudget:t.budget;   // 总预算基准: 已设置用设定值, 否则用记录预算求和
+  const diff=t.doneDiff;                         // 预算差额: 只对比"已发生项"的预算, 未购买项不算结余
+  const usePct=tb>0?(t.actual/tb*100):0;
+  const planTxt=t.plannedCount>0?` · 未购 ${t.plannedCount} 项 ${fmt(t.plannedBudget)}`:'';
   document.getElementById('stats').innerHTML=`
-    <div class="stat"><div class="label">实际总价</div><div class="val">${fmt(ta)}</div><div class="sub">${data.length} 笔记录</div></div>
-    <div class="stat"><div class="label">预算使用率</div><div class="val ${usePct>100?'':''}">${usePct.toFixed(0)}%</div><div class="sub">${usePct>100?'已超支':'占总预算'}</div></div>
-    <div class="stat"><div class="label">已付合计</div><div class="val">${fmt(tp)}</div><div class="sub">定金+进度款</div></div>
-    <div class="stat"><div class="label">待付尾款</div><div class="val" style="color:var(--danger)">${fmt(tb2)}</div><div class="sub">${tb2>0?'还需付款':'已全部结清'}</div></div>
-    <div class="stat ${diff>0?'over':(diff<0?'save':'')}"><div class="label">预算差额</div><div class="val">${diff>0?'+':''}${fmt(diff)}</div><div class="sub">${diff>0?'超支':'结余'}（对比明细预算）</div></div>`;
+    <div class="stat"><div class="label">实际总价</div><div class="val">${fmt(t.actual)}</div><div class="sub">共 ${data.length} 笔 · 已发生 ${t.doneCount} 笔</div></div>
+    <div class="stat"><div class="label">预算使用率</div><div class="val">${usePct.toFixed(0)}%</div><div class="sub">${usePct>100?'已超支':'占总预算'}</div></div>
+    <div class="stat"><div class="label">已付合计</div><div class="val">${fmt(t.paid)}</div><div class="sub">定金+进度款</div></div>
+    <div class="stat"><div class="label">待付尾款</div><div class="val" style="color:var(--danger)">${fmt(t.balance)}</div><div class="sub">${t.balance>0?'还需付款':'已全部结清'}</div></div>
+    <div class="stat ${diff>0?'over':(diff<0?'save':'')}"><div class="label">预算差额</div><div class="val">${diff>0?'+':''}${fmt(diff)}</div><div class="sub">${diff>0?'超支':'结余'}（仅已发生项）${planTxt}</div></div>`;
 }
 function catAgg(){
   const m={}; Object.keys(CATS).forEach(c=>m[c]={budget:0,actual:0,paid:0,balance:0});
@@ -675,10 +717,25 @@ function renderChartStack(body,ms){
 }
 
 function renderChartDev(body,ms){
-  const items=data.map(r=>({name:r.name,c:r.category,dev:(Number(r.actual)||0)-(Number(r.budget)||0)}))
+  const t=totals();
+  // 只看"已发生"的记录(actual>0); 未购买项不能算结余, 否则图表里全是假结余
+  const done=data.filter(r=>(Number(r.actual)||0)>0);
+  const items=done.map(r=>({name:r.name,c:r.category,dev:(Number(r.actual)||0)-(Number(r.budget)||0)}))
     .filter(x=>x.dev!==0)
-    .sort((a,b)=>Math.abs(b.dev)-Math.abs(a.dev)).slice(0,8);
-  if(!items.length){ body.innerHTML='<p style="color:var(--muted);font-size:13px">暂无预算偏差项。</p>'; return; }
+    // 超支项优先展示(按超支金额降序), 其次结余(按金额降序)
+    .sort((a,b)=>((b.dev>0)-(a.dev>0))||(Math.abs(b.dev)-Math.abs(a.dev)))
+    .slice(0,8);
+  const overN=done.filter(r=>{const b=Number(r.budget)||0;return b>0&&(Number(r.actual)||0)>b;}).length;
+  const saveN=done.filter(r=>{const b=Number(r.budget)||0;return b>0&&(Number(r.actual)||0)<b;}).length;
+  const planNote=t.plannedCount>0
+    ? `<p class="chart-tip" style="color:var(--muted)">另有 <b style="color:var(--text)">${t.plannedCount}</b> 项只有预算、还没购买（合计 ${fmt(t.plannedBudget)}），不计入偏差统计。</p>`
+    : '';
+  if(!items.length){
+    body.innerHTML=(t.plannedCount>0
+      ? '<p style="color:var(--muted);font-size:13px">暂无可比较的预算偏差：已发生的记录都还没填预算。</p>'
+      : '<p style="color:var(--muted);font-size:13px">暂无可比较的预算偏差。</p>')+planNote;
+    return;
+  }
   const max=Math.max(1,...items.map(x=>Math.abs(x.dev)));
   const rows=items.map(x=>{
     const w=Math.max(Math.abs(x.dev)/max*50,0.8);
@@ -692,15 +749,19 @@ function renderChartDev(body,ms){
         <div class="dev-track"><span class="dev-fill" style="width:${w}%;${side};background:${color}"></span></div></div>
       <div class="amt" style="color:${color}">${sign}${ms(Math.abs(x.dev))} ${amt}</div></div>`;
   }).join('');
+  const summary=overN===0
+    ? '<p class="chart-tip" style="color:var(--ok);font-weight:600">当前没有超支项，已发生的记录都在预算内。</p>'
+    : `<p class="chart-tip">共 ${overN} 项超支、${saveN} 项结余（仅统计已发生的记录）。</p>`;
   body.innerHTML=`<div class="dev-list">${rows}</div>
-    <p class="chart-tip">以中线为基准：右侧=超支(红)，左侧=结余(绿)，取偏差绝对值最大的前 8 项。</p>`;
+    <p class="chart-tip">以中线为基准：右侧=超支(红)，左侧=结余(绿)，取偏差绝对值最大的前 8 项。</p>${summary}${planNote}`;
 }
 function renderTabs(){
   const m=catAgg();
   const items=[['全部',null],...CAT_SORT.map(c=>[c,m[c]])];
   const payTabs=[
     ['paid','付完全款','#10b981'],
-    ['unpaid','未付完全款','#f59e0b']
+    ['unpaid','未付完全款','#f59e0b'],
+    ['planned','计划中未购买','#94a3b8']
   ];
   document.getElementById('tabs').innerHTML=items.map(([name,agg])=>{
     const cnt=name==='全部'?data.length:data.filter(r=>r.category===name).length;
@@ -709,8 +770,11 @@ function renderTabs(){
   }).join('')+payTabs.map(([key,label,color])=>{
     const cnt=data.filter(r=>{
       const d=derive(r);
-      return key==='paid'?d.settled:(!d.settled && d.actual>0);
+      if(key==='paid') return d.settled;
+      if(key==='planned') return d.planned;
+      return !d.settled && !d.planned;
     }).length;
+    if(!cnt) return '';
     return `<div class="tab pay-tab ${payFilter===key?'active':''}" data-pay="${key}"><span class="sw" style="background:${color}"></span>${label} <span style="opacity:.6">${cnt}</span></div>`;
   }).join('');
   document.querySelectorAll('#tabs .tab').forEach(t=>{
@@ -726,7 +790,8 @@ function filteredItems(){
   let items=data.slice();
   if(activeCat!=='全部') items=items.filter(r=>r.category===activeCat);
   if(payFilter==='paid') items=items.filter(r=>{const d=derive(r); return d.settled;});
-  else if(payFilter==='unpaid') items=items.filter(r=>{const d=derive(r); return !d.settled && d.actual>0;});
+  else if(payFilter==='planned') items=items.filter(r=>{const d=derive(r); return d.planned;});
+  else if(payFilter==='unpaid') items=items.filter(r=>{const d=derive(r); return !d.settled && !d.planned;});
   return items;
 }
 function renderList(){
@@ -750,18 +815,41 @@ function updateListInfo(n){
   const s=document.getElementById('listInfo');
   if(!s) return;
   const cat=activeCat==='全部'?'':activeCat;
-  const pay=payFilter==='paid'?' · 已付清':payFilter==='unpaid'?' · 未付清':'';
+  const pay=payFilter==='paid'?' · 已付清':payFilter==='unpaid'?' · 未付清':payFilter==='planned'?' · 计划中未购买':'';
   s.textContent=n?`共 ${n} 条${cat?' · '+cat:''}${pay}`:'';
+}
+// 状态徽章(卡片/表格共用, 统一判定)
+function statusBadge(d){
+  if(d.status==='planned') return '<span class="statusBadge planned">○ 计划中</span>';
+  if(d.status==='deposit') return '<span class="statusBadge dep">◐ 已付定金</span>';
+  if(d.status==='over')    return '<span class="statusBadge over">✓ 已结清·多付</span>';
+  if(d.status==='done')    return '<span class="statusBadge done">✓ 已完成</span>';
+  return '<span class="statusBadge doing">● 进行中</span>';
+}
+// 尾款单元格: 未购买显示 —, 多付显示多付, 预计尾款加 ≈
+function tailCell(d){
+  if(d.status==='planned') return '<span style="color:var(--muted)">—</span>';
+  if(d.overpaid>0)         return `<span style="color:var(--warn);font-weight:600">多付 ${fmt(d.overpaid)}</span>`;
+  if(d.estimated)          return `<span style="color:var(--danger)">≈${fmt(d.pending)}</span>`;
+  return fmt(d.balance);
 }
 // 卡片视图（原每个记录一张大卡片）
 function renderListCard(items){
   return items.map(r=>{
     const d=derive(r); const c=catInfo(r.category);
-    const state=d.settled?'done':'doing';
-    const badge=d.settled?'<span class="statusBadge done">✓ 已完成</span>':`<span class="statusBadge doing">● 进行中</span>`;
+    const isPlan=d.status==='planned';
     const check=d.settled?'<span class="check">✓</span>':'';
-    return `<div class="item ${state}"><div class="top"><div>
-      <div class="name">${check}${escapeHtml(r.name)} <span class="tag" style="background:${c.raw}">${r.category}</span> ${badge}</div>
+    const actualCell=isPlan
+      ? '<div class="v" style="color:var(--muted)">未购买</div>'
+      : (d.estimated?'<div class="v" style="color:var(--muted)">待定</div>':`<div class="v">${fmt(d.actual)}</div>`);
+    let line;
+    if(isPlan) line='<span style="color:var(--muted)">尚未购买 · 计划预算 '+fmt(d.budget)+'</span><span></span>';
+    else if(d.status==='deposit') line='<span style="color:var(--muted)">已付 '+fmt(d.paid)+' · 总价待定</span><span style="color:var(--danger)">预计尾款 '+fmt(d.pending)+'</span>';
+    else if(d.overpaid>0) line='<span style="color:var(--muted)">已付 '+fmt(d.paid)+'</span><span style="color:var(--warn);font-weight:600">多付 '+fmt(d.overpaid)+'</span>';
+    else if(d.settled) line='<span style="color:var(--ok)">✓ 已结清</span><span></span>';
+    else line='<span>付款进度 '+d.progress.toFixed(0)+'%</span><span style="color:var(--danger)">待付尾款 '+fmt(d.balance)+'</span>';
+    return `<div class="item ${(d.status==='done'||d.status==='over')?'done':'doing'}"><div class="top"><div>
+      <div class="name">${check}${escapeHtml(r.name)} <span class="tag" style="background:${c.raw}">${r.category}</span> ${statusBadge(d)}</div>
       <div class="meta">${r.supplier?escapeHtml(r.supplier)+' · ':''}${r.date||'未填日期'}${r.note?' · '+escapeHtml(r.note):''}</div>
     </div><div class="ops">
       <button class="icon-btn" data-edit="${r.id}">编辑</button>
@@ -769,12 +857,12 @@ function renderListCard(items){
     </div></div>
     <div class="grid">
       <div class="cell"><div class="k">预算</div><div class="v">${fmt(d.budget)}</div></div>
-      <div class="cell"><div class="k">实际总价</div><div class="v">${fmt(d.actual)}</div></div>
+      <div class="cell"><div class="k">实际总价</div>${actualCell}</div>
       <div class="cell"><div class="k">已付(定金${fmt(d.deposit)}+其他${fmt(d.other)})</div><div class="v">${fmt(d.paid)}</div></div>
-      <div class="cell"><div class="k">尾款</div><div class="v ${d.settled?'green':'red'}">${fmt(d.balance)}</div></div>
+      <div class="cell"><div class="k">${d.overpaid>0?'多付':'尾款'}</div><div class="v ${d.settled||isPlan?'':(d.overpaid>0?'':'red')}">${tailCell(d)}</div></div>
     </div>
-    <div class="progress ${d.settled?'ok':''}"><span style="width:${d.progress}%"></span></div>
-    <div class="pstatus"><span>付款进度 ${d.progress.toFixed(0)}%</span><span>${d.settled?'':'待付尾款 '+fmt(d.balance)}</span></div></div>`;
+    ${isPlan?'':`<div class="progress ${d.settled?'ok':''}"><span style="width:${d.progress}%"></span></div>`}
+    <div class="pstatus">${line}</div></div>`;
   }).join('');
 }
 // 表格视图（每行一条，最紧凑）
@@ -785,10 +873,10 @@ function renderListTable(items){
       <td><div class="nmcell"><span class="dot" style="background:${c.raw}"></span><span class="nname">${d.settled?'<span class="check" style="color:var(--ok)">✓</span> ':''}${escapeHtml(r.name)}</span></div></td>
       <td><span class="tagonly" style="background:${c.raw}">${r.category}</span></td>
       <td class="num">${fmt(d.budget)}</td>
-      <td class="num">${fmt(d.actual)}</td>
+      <td class="num">${d.status==='planned'?'<span style="color:var(--muted)">—</span>':(d.estimated?'<span style="color:var(--muted)">待定</span>':fmt(d.actual))}</td>
       <td class="num">${fmt(d.paid)}</td>
-      <td class="num ${d.settled?'g':'r'}">${fmt(d.balance)}</td>
-      <td>${d.settled?'<span class="statusBadge done">✓ 已完成</span>':'<span class="statusBadge doing">● 进行中</span>'}</td>
+      <td class="num ${d.overpaid>0?'':(d.settled?'g':'r')}">${tailCell(d)}</td>
+      <td>${statusBadge(d)}</td>
       <td style="text-align:right;white-space:nowrap">
         <button class="icbtn" data-edit="${r.id}">编辑</button>
         <button class="icbtn d" data-del="${r.id}">删除</button>
@@ -808,16 +896,27 @@ function renderListGroup(items){
   if(!names.length) Object.keys(groups).forEach(c=>names.push(c));
   const block=names.map(cn=>{
     const rows=groups[cn]; const c=catInfo(cn);
-    let ta=0,tp=0,tb=0,tbd=0; rows.forEach(r=>{const d=derive(r); ta+=d.actual; tp+=d.paid; tb+=d.balance; tbd+=d.budget;});
+    let ta=0,tp=0,tb=0,tbd=0,pc=0; rows.forEach(r=>{const d=derive(r); ta+=d.actual; tp+=d.paid; tb+=d.balance; tbd+=d.budget; if(d.planned)pc++;});
     const body=rows.map(r=>{
       const d=derive(r); const check=d.settled?'<span class="check">✓</span>':'';
+      let main, sub;
+      if(d.status==='planned'){
+        main='<span style="color:var(--muted)">未购买</span>';
+        sub=`<span style="color:var(--muted)">预算 ${fmt(d.budget)}</span>`;
+      }else{
+        main=d.estimated?'<span style="color:var(--muted)">待定</span>':fmt(d.actual);
+        const base=`<span style="color:var(--muted)">预算 ${fmt(d.budget)}</span> · <span class="paid">已付 ${fmt(d.paid)}</span>`;
+        if(d.status==='deposit')      sub=`${base} · <span style="color:var(--danger);font-weight:600">预计尾款 ≈${fmt(d.pending)}</span>`;
+        else if(d.overpaid>0)         sub=`${base} · <span style="color:var(--warn);font-weight:600">多付 ${fmt(d.overpaid)}</span>`;
+        else                          sub=`${base}${d.balance>0?' · <span style="color:var(--danger);font-weight:600">尾款 '+fmt(d.balance)+'</span>':''}`;
+      }
       return `<div class="grow"><div class="gname2">${check}${escapeHtml(r.name)}<span class="note">${r.date||''}</span></div>
-        <div class="gamt">${fmt(d.actual)}<div style="font-size:12px;white-space:nowrap"><span style="color:var(--muted)">预算 ${fmt(d.budget)}</span> · <span class="paid">已付 ${fmt(d.paid)}</span>${d.balance>0?' · <span style="color:var(--danger);font-weight:600">尾款 '+fmt(d.balance)+'</span>':''}</div></div>
+        <div class="gamt">${main}<div style="font-size:12px;white-space:nowrap">${sub}</div></div>
         <div style="display:flex;gap:6px"><button class="icbtn" data-edit="${r.id}">编辑</button><button class="icbtn d" data-del="${r.id}">删除</button></div></div>`;
     }).join('');
     return `<div class="group-card">
       <div class="group-head"><span class="dot" style="background:${c.raw}"></span>
-        <span class="gname">${cn}</span><span class="gcnt">${rows.length} 条</span>
+        <span class="gname">${cn}</span><span class="gcnt">${rows.length} 条${pc>0?' · 未购 '+pc:''}</span>
         <span class="gsum">预算 ${fmt(tbd)} · 实际 <b>${fmt(ta)}</b> · 已付 ${fmt(tp)} · 尾款 ${tb>0?'<span style="color:var(--danger)">'+fmt(tb)+'</span>':'0'}</span>
         <span class="garrow">▾</span></div>
       <div class="group-body">${body}</div></div>`;
@@ -874,7 +973,14 @@ function updateHint(){
   const oth=Number(document.getElementById('f_other').value)||0;
   const paid=dep+oth, bal=Math.max(a-paid,0);
   let s=`已付合计 ${fmt(paid)}，尾款 ${fmt(bal)}`;
-  if(a>0&&b>0){const diff=a-b; s+=` ｜ 相对预算${diff>0?'超支':'结余'} ${fmt(Math.abs(diff))}`;}
+  if(a<=0 && paid>0){
+    // 已付定金但总价没填: 用预算估算尾款, 与列表口径保持一致
+    const est=b>0?Math.max(b-paid,0):0;
+    s=`已付 ${fmt(paid)}，但「实际总价」未填`;
+    s+= b>0?`，按预算预计尾款 ≈${fmt(est)}`:'，无法计算尾款，请补填实际总价';
+  }else if(a>0 && paid>a){
+    s=`已付 ${fmt(paid)} 超过实际总价 ${fmt(a)}，多付 ${fmt(paid-a)}`;
+  }else if(a>0&&b>0){const diff=a-b; s+=` ｜ 相对预算${diff>0?'超支':'结余'} ${fmt(Math.abs(diff))}`;}
   document.getElementById('calcHint').textContent=s;
 }
 ['f_budget','f_actual','f_deposit','f_other'].forEach(id=>document.getElementById(id).addEventListener('input',updateHint));
