@@ -584,14 +584,14 @@ document.getElementById('btnBudgetSave').onclick=async()=>{
 function renderStats(){
   let itemBudget=0,ta=0,tp=0,tb2=0;  data.forEach(r=>{const d=derive(r); itemBudget+=d.budget; ta+=d.actual; tp+=d.paid; tb2+=d.balance;});
   const tb=totalBudget>0?totalBudget:itemBudget;   // 总预算基准: 已设置用设定值, 否则用记录预算求和
-  const diff=ta-tb;
+  const diff=ta-itemBudget;                        // 预算差额: 对比明细预算合计, 跟随明细预算修改实时变化
   const usePct=tb>0?(ta/tb*100):0;
   document.getElementById('stats').innerHTML=`
     <div class="stat"><div class="label">实际总价</div><div class="val">${fmt(ta)}</div><div class="sub">${data.length} 笔记录</div></div>
-    <div class="stat"><div class="label">预算使用率</div><div class="val ${usePct>100?'':''}">${usePct.toFixed(0)}%</div><div class="sub">${usePct>100?'已超支':'占预算'}</div></div>
+    <div class="stat"><div class="label">预算使用率</div><div class="val ${usePct>100?'':''}">${usePct.toFixed(0)}%</div><div class="sub">${usePct>100?'已超支':'占总预算'}</div></div>
     <div class="stat"><div class="label">已付合计</div><div class="val">${fmt(tp)}</div><div class="sub">定金+进度款</div></div>
     <div class="stat"><div class="label">待付尾款</div><div class="val" style="color:var(--danger)">${fmt(tb2)}</div><div class="sub">${tb2>0?'还需付款':'已全部结清'}</div></div>
-    <div class="stat ${diff>0?'over':(diff<0?'save':'')}"><div class="label">预算差额</div><div class="val">${diff>0?'+':''}${fmt(diff)}</div><div class="sub">${diff>0?'超支':'结余'}</div></div>`;
+    <div class="stat ${diff>0?'over':(diff<0?'save':'')}"><div class="label">预算差额</div><div class="val">${diff>0?'+':''}${fmt(diff)}</div><div class="sub">${diff>0?'超支':'结余'}（对比明细预算）</div></div>`;
 }
 function catAgg(){
   const m={}; Object.keys(CATS).forEach(c=>m[c]={budget:0,actual:0,paid:0,balance:0});
